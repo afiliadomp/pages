@@ -1,0 +1,68 @@
+Uri: https://moldespronto.com/comments/feed/
+File Name: C:\Downloaded Web Sites\moldespronto.com\comments\feed\index.htm
+Content Type: application/rss+xml
+
+Uri: https://moldespronto.com/curso-de-confeccao-de-bolsas-passo-a-passo/
+File Name: C:\Downloaded Web Sites\moldespronto.com\curso-de-confeccao-de-bolsas-passo-a-passo\index.htm
+Content Type: text/html
+
+Uri: https://moldespronto.com/feed/
+File Name: C:\Downloaded Web Sites\moldespronto.com\feed\index.htm
+Content Type: application/rss+xml
+
+Uri: https://moldespronto.com/wp-content/litespeed/css/c004b0aecd9361993e0420acb1e32a8d.css?ver=ad23d
+File Name: C:\Downloaded Web Sites\moldespronto.com\wp-content\litespeed\css\c004b0aecd9361993e0420acb1e32a8d.css
+Content Type: text/css
+
+Uri: https://moldespronto.com/wp-content/plugins/woocommerce/assets/fonts/cardo_normal_400.woff2
+File Name: C:\Downloaded Web Sites\moldespronto.com\wp-content\plugins\woocommerce\assets\fonts\cardo_normal_400.woff2
+Content Type: font/woff2
+
+Uri: https://moldespronto.com/wp-content/plugins/woocommerce/assets/fonts/Inter-VariableFont_slnt,wght.woff2
+File Name: C:\Downloaded Web Sites\moldespronto.com\wp-content\plugins\woocommerce\assets\fonts\Inter-VariableFont_slnt,wght.woff2
+Content Type: font/woff2
+
+Uri: https://moldespronto.com/wp-content/themes/astra/assets/fonts/astra.svg
+File Name: C:\Downloaded Web Sites\moldespronto.com\wp-content\themes\astra\assets\fonts\astra.svg
+Content Type: image/svg+xml
+
+Uri: https://moldespronto.com/wp-content/themes/astra/assets/fonts/astra.ttf
+File Name: C:\Downloaded Web Sites\moldespronto.com\wp-content\themes\astra\assets\fonts\astra.ttf
+Content Type: font/ttf
+
+Uri: https://moldespronto.com/wp-content/themes/astra/assets/fonts/astra.woff
+File Name: C:\Downloaded Web Sites\moldespronto.com\wp-content\themes\astra\assets\fonts\astra.woff
+Content Type: font/woff
+
+Uri: https://moldespronto.com/wp-content/uploads/2024/05/cropped-D_NQ_NP_871688-MLB74018408354_012024-O-removebg-preview-180x180.png
+File Name: C:\Downloaded Web Sites\moldespronto.com\wp-content\uploads\2024\05\cropped-D_NQ_NP_871688-MLB74018408354_012024-O-removebg-preview-180x180.png
+Content Type: image/png
+
+Uri: https://moldespronto.com/wp-content/uploads/2024/05/cropped-D_NQ_NP_871688-MLB74018408354_012024-O-removebg-preview-192x192.png
+File Name: C:\Downloaded Web Sites\moldespronto.com\wp-content\uploads\2024\05\cropped-D_NQ_NP_871688-MLB74018408354_012024-O-removebg-preview-192x192.png
+Content Type: image/png
+
+Uri: https://moldespronto.com/wp-content/uploads/2024/05/cropped-D_NQ_NP_871688-MLB74018408354_012024-O-removebg-preview-32x32.png
+File Name: C:\Downloaded Web Sites\moldespronto.com\wp-content\uploads\2024\05\cropped-D_NQ_NP_871688-MLB74018408354_012024-O-removebg-preview-32x32.png
+Content Type: image/png
+
+Uri: https://moldespronto.com/wp-json/
+File Name: C:\Downloaded Web Sites\moldespronto.com\wp-json\index.htm
+Content Type: application/json
+
+Uri: https://moldespronto.com/wp-json/oembed/1.0/embed?url=https:%2F%2Fmoldespronto.com%2Fcurso-de-confeccao-de-bolsas-passo-a-passo%2F
+File Name: C:\Downloaded Web Sites\moldespronto.com\wp-json\oembed\1.0\embed
+Content Type: application/json
+
+Uri: https://moldespronto.com/wp-json/oembed/1.0/embed?url=https:%2F%2Fmoldespronto.com%2Fcurso-de-confeccao-de-bolsas-passo-a-passo%2F&format=xml
+File Name: C:\Downloaded Web Sites\moldespronto.com\wp-json\oembed\1.0\embed-1
+Content Type: text/xml
+
+Uri: https://moldespronto.com/wp-json/wp/v2/pages/5933
+File Name: C:\Downloaded Web Sites\moldespronto.com\wp-json\wp\v2\pages\5933
+Content Type: application/json
+
+Uri: https://moldespronto.com/xmlrpc.php?rsd
+File Name: C:\Downloaded Web Sites\moldespronto.com\xmlrpc.php
+Content Type: text/xml
+
