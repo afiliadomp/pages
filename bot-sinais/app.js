@@ -187,18 +187,14 @@
 
   function addResultToStore(symbol, result, side, entryPrice, exitPrice) {
     ensureDay(state.store, state.dayKey);
-    const rec = { time: nowHMS(), symbol, side, result, entryPrice, exitPrice };
     const day = state.store[state.dayKey];
+    const rec = { time: nowHMS(), symbol, side, result, entryPrice, exitPrice };
     day.results.unshift(rec);
-    // Recalcular estatísticas baseadas na lista de resultados
-    const total = day.results.length;
-    const wins = day.results.reduce((acc, r) => acc + (r.result === 'WIN' ? 1 : 0), 0);
-    const losses = Math.max(0, total - wins);
-    const winrate = total > 0 ? parseFloat(((wins / total) * 100).toFixed(1)) : 0;
-    day.stats.total = total;
-    day.stats.wins = wins;
-    day.stats.losses = losses;
-    day.stats.winrate = winrate;
+    // Estatísticas diárias (incremental)
+    day.stats.total = (day.stats.total || 0) + 1;
+    day.stats.wins = (day.stats.wins || 0) + (result === 'WIN' ? 1 : 0);
+    day.stats.losses = Math.max(0, day.stats.total - day.stats.wins);
+    day.stats.winrate = day.stats.total > 0 ? parseFloat(((day.stats.wins / day.stats.total) * 100).toFixed(1)) : 0;
     saveStore();
     updateDailySummaryUI();
   }
@@ -457,19 +453,29 @@
     for (const symbol of SYMBOLS) {
       const ent = state.entry[symbol];
       if (!ent) continue;
-      const exit = state.lastPrice[symbol];
       const side = ent.side;
-      let result = 'LOSS';
-      if (side === 'CALL' && exit > ent.entryPrice) result = 'WIN';
-      else if (side === 'PUT' && exit < ent.entryPrice) result = 'WIN';
+      const entryPrice = Number(ent.entryPrice);
+      const exitPrice = Number(state.lastPrice[symbol]);
 
+      if (!Number.isFinite(entryPrice) || !Number.isFinite(exitPrice)) {
+        // Evita NaN: não registra resultado se valores inválidos
+        state.entry[symbol] = null;
+        continue;
+      }
+
+      let result = 'LOSS';
+      if (side === 'CALL' && exitPrice > entryPrice) result = 'WIN';
+      else if (side === 'PUT' && exitPrice < entryPrice) result = 'WIN';
+
+      // Estatísticas por símbolo
       state.stats[symbol].total += 1;
       if (result === 'WIN') state.stats[symbol].wins += 1;
       updateStats(symbol);
 
+      // UI e persistência
       beep(result === 'WIN' ? 800 : 400, 400);
-      prependResultItem(symbol, result, ent.entryPrice, exit);
-      addResultToStore(symbol, result, side, ent.entryPrice, exit);
+      prependResultItem(symbol, result, entryPrice, exitPrice);
+      addResultToStore(symbol, result, side, entryPrice, exitPrice);
 
       state.entry[symbol] = null;
     }
