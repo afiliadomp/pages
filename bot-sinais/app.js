@@ -109,10 +109,13 @@
     if (!resultsFeedEl) return;
     const li = document.createElement('li');
     li.className = 'item';
+    const priceClass = result === 'WIN' ? 'win' : 'loss';
+    const entryFmt = Number(entryPrice).toFixed(4);
+    const exitFmt = Number(exitPrice).toFixed(4);
     li.innerHTML = `
       <span class="time-badge">${nowHMS()}</span>
       <span class="text"><strong class="symbol">${symbol}</strong> <span class="result ${result === 'WIN' ? 'win' : 'loss'}">${result}</span></span>
-      <span class="price">${Number(entryPrice).toFixed(6).replace(/\.?(0+)$/, '')} → ${Number(exitPrice).toFixed(6).replace(/\.?(0+)$/, '')}</span>
+      <span class="price ${priceClass}">${entryFmt} → ${exitFmt}</span>
     `;
     resultsFeedEl.insertBefore(li, resultsFeedEl.firstChild);
     trimFeed(resultsFeedEl);
@@ -222,15 +225,29 @@
     for (const r of day.results.slice().reverse()) {
       const li = document.createElement('li');
       li.className = 'item';
-      const entryFmt = Number(r.entryPrice).toFixed(6).replace(/\.?(0+)$/, '');
-      const exitFmt = Number(r.exitPrice).toFixed(6).replace(/\.?(0+)$/, '');
+      const entryFmt = Number(r.entryPrice).toFixed(4);
+      const exitFmt = Number(r.exitPrice).toFixed(4);
+      const priceClass = r.result === 'WIN' ? 'win' : 'loss';
       li.innerHTML = `
         <span class="time-badge">${r.time}</span>
         <span class="text"><strong class="symbol">${r.symbol}</strong> <span class="result ${r.result === 'WIN' ? 'win' : 'loss'}">${r.result}</span></span>
-        <span class="price">${entryFmt} → ${exitFmt}</span>
+        <span class="price ${priceClass}">${entryFmt} → ${exitFmt}</span>
       `;
       resultsFeedEl && resultsFeedEl.appendChild(li);
     }
+    // --- Recalcular estatísticas por símbolo a partir do histórico do dia ---
+    // zera estatísticas em memória
+    for (const s of SYMBOLS) state.stats[s] = { total: 0, wins: 0 };
+
+    // varre os resultados salvos e acumula por símbolo
+    for (const r of day.results) {
+      if (!SYMBOLS.includes(r.symbol)) continue;
+      state.stats[r.symbol].total += 1;
+      if (r.result === 'WIN') state.stats[r.symbol].wins += 1;
+    }
+
+    // atualiza os cards de stats na UI
+    for (const s of SYMBOLS) updateStats(s);
     updateDailySummaryUI();
   }
 
