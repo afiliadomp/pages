@@ -112,7 +112,7 @@
     li.innerHTML = `
       <span class="time-badge">${nowHMS()}</span>
       <span class="text"><strong class="symbol">${symbol}</strong> <span class="result ${result === 'WIN' ? 'win' : 'loss'}">${result}</span></span>
-      <span class="price">${Number(exitPrice).toFixed(6).replace(/\.?(0+)$/, '')}</span>
+      <span class="price">${Number(entryPrice).toFixed(6).replace(/\.?(0+)$/, '')} → ${Number(exitPrice).toFixed(6).replace(/\.?(0+)$/, '')}</span>
     `;
     resultsFeedEl.insertBefore(li, resultsFeedEl.firstChild);
     trimFeed(resultsFeedEl);
@@ -166,10 +166,14 @@
   function updateDailySummaryUI() {
     const stats = state.store[state.dayKey]?.stats;
     if (!stats) return;
-    if (sumTotalEl) sumTotalEl.textContent = String(stats.total || 0);
-    if (sumWinsEl) sumWinsEl.textContent = String(stats.wins || 0);
-    if (sumLossesEl) sumLossesEl.textContent = String(stats.losses || 0);
-    if (sumWinrateEl) sumWinrateEl.textContent = `${Number(stats.winrate || 0).toFixed(1)}%`;
+    const total = Number(stats.total || 0);
+    const wins = Number(stats.wins || 0);
+    const losses = Number(stats.losses || 0);
+    const winrate = Number(stats.winrate || 0);
+    if (sumTotalEl) sumTotalEl.textContent = String(total);
+    if (sumWinsEl) sumWinsEl.textContent = String(wins);
+    if (sumLossesEl) sumLossesEl.textContent = String(losses);
+    if (sumWinrateEl) sumWinrateEl.textContent = `${winrate.toFixed(1)}%`;
   }
 
   function addSignalToStore(symbol, side, price) {
@@ -181,15 +185,20 @@
     saveStore();
   }
 
-  function addResultToStore(symbol, result) {
+  function addResultToStore(symbol, result, side, entryPrice, exitPrice) {
     ensureDay(state.store, state.dayKey);
-    const rec = { time: nowHMS(), symbol, result };
-    state.store[state.dayKey].results.unshift(rec);
-    const stats = state.store[state.dayKey].stats;
-    stats.total = (stats.total || 0) + 1;
-    if (result === 'WIN') stats.wins = (stats.wins || 0) + 1;
-    stats.losses = Math.max(0, stats.total - stats.wins);
-    stats.winrate = stats.total > 0 ? (stats.wins / stats.total) * 100 : 0;
+    const rec = { time: nowHMS(), symbol, side, result, entryPrice, exitPrice };
+    const day = state.store[state.dayKey];
+    day.results.unshift(rec);
+    // Recalcular estatísticas baseadas na lista de resultados
+    const total = day.results.length;
+    const wins = day.results.reduce((acc, r) => acc + (r.result === 'WIN' ? 1 : 0), 0);
+    const losses = Math.max(0, total - wins);
+    const winrate = total > 0 ? parseFloat(((wins / total) * 100).toFixed(1)) : 0;
+    day.stats.total = total;
+    day.stats.wins = wins;
+    day.stats.losses = losses;
+    day.stats.winrate = winrate;
     saveStore();
     updateDailySummaryUI();
   }
@@ -217,10 +226,12 @@
     for (const r of day.results.slice().reverse()) {
       const li = document.createElement('li');
       li.className = 'item';
+      const entryFmt = Number(r.entryPrice).toFixed(6).replace(/\.?(0+)$/, '');
+      const exitFmt = Number(r.exitPrice).toFixed(6).replace(/\.?(0+)$/, '');
       li.innerHTML = `
         <span class="time-badge">${r.time}</span>
         <span class="text"><strong class="symbol">${r.symbol}</strong> <span class="result ${r.result === 'WIN' ? 'win' : 'loss'}">${r.result}</span></span>
-        <span class="price">—</span>
+        <span class="price">${entryFmt} → ${exitFmt}</span>
       `;
       resultsFeedEl && resultsFeedEl.appendChild(li);
     }
@@ -458,7 +469,7 @@
 
       beep(result === 'WIN' ? 800 : 400, 400);
       prependResultItem(symbol, result, ent.entryPrice, exit);
-      addResultToStore(symbol, result);
+      addResultToStore(symbol, result, side, ent.entryPrice, exit);
 
       state.entry[symbol] = null;
     }
