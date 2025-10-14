@@ -80,6 +80,19 @@ p { margin: 0; }
   color: var(--muted);
   font-size: 13px;
 }
+.top-actions { display: inline-flex; gap: 8px; margin-left: 12px; }
+.btn {
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: #131722;
+  color: #cbd5e1;
+  font-size: 13px;
+  cursor: pointer;
+}
+.btn:hover { border-color: rgba(255,255,255,0.12); }
+.btn-reconnect { color: var(--accent-teal); }
+.btn-reset { color: #f472b6; }
 .status-badge.ok { color: var(--green-up); border-color: rgba(40, 199, 111, 0.35); }
 .status-badge.warn { color: #f59e0b; border-color: rgba(245, 158, 11, 0.35); }
 .status-badge.err { color: var(--red-down); border-color: rgba(255, 77, 79, 0.35); }
@@ -89,6 +102,22 @@ p { margin: 0; }
   grid-template-columns: 1fr;
   gap: var(--space-4);
   padding: var(--space-4);
+}
+
+/* Painel superior: relógio e resumo */
+#panelTop { text-align: center; }
+#clock {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 34px;
+  font-weight: 700;
+  color: var(--accent-teal);
+  text-shadow: 0 0 12px rgba(45, 212, 191, 0.35);
+  margin-bottom: var(--space-2);
+}
+#summary {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 15px;
+  color: #e5e7eb;
 }
 
 .section { display: block; }

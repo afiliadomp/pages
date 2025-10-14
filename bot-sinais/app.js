@@ -16,6 +16,7 @@
 
   const MAX_CLOSES = 500;
   const FEED_MAX_ITEMS = 100;
+  const STORAGE_KEY = 'stoch_rsi_signals_web';
 
   const state = {
     closes: Object.fromEntries(SYMBOLS.map(s => [s, []])),
@@ -28,6 +29,8 @@
     reconnectAttempts: 0,
     minuteStampAnnounced: null,
     minuteStampExited: null,
+    dayKey: null,
+    store: {},
   };
 
   // ===== Seletores =====
@@ -35,6 +38,13 @@
   const connStatusEl = $('#connStatus');
   const signalsFeedEl = $('#signalsFeed');
   const resultsFeedEl = $('#resultsFeed');
+  const clockEl = $('#clock');
+  const sumTotalEl = $('#sum-total');
+  const sumWinsEl = $('#sum-wins');
+  const sumLossesEl = $('#sum-losses');
+  const sumWinrateEl = $('#sum-winrate');
+  const btnReconnect = $('#btnReconnect');
+  const btnReset = $('#btnReset');
 
   // ===== Utils =====
   function nowHMS() {
@@ -117,6 +127,110 @@
     if (totalEl) totalEl.textContent = String(total);
     if (winsEl) winsEl.textContent = String(wins);
     if (wrEl) wrEl.textContent = `${winrate}%`;
+  }
+
+  // ===== Clock & Summary =====
+  function updateClock() {
+    if (!clockEl) return;
+    clockEl.textContent = nowHMS();
+  }
+
+  function ensureDay(store, key) {
+    if (!store[key]) {
+      store[key] = { signals: [], results: [], stats: { total: 0, wins: 0, losses: 0, winrate: 0 } };
+    }
+  }
+
+  function getDayKey(date = new Date()) {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+
+  function loadStore() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return {};
+      const obj = JSON.parse(raw);
+      return obj && typeof obj === 'object' ? obj : {};
+    } catch (_) { return {}; }
+  }
+
+  function saveStore() {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state.store));
+    } catch (_) { /* ignore */ }
+  }
+
+  function updateDailySummaryUI() {
+    const stats = state.store[state.dayKey]?.stats;
+    if (!stats) return;
+    if (sumTotalEl) sumTotalEl.textContent = String(stats.total || 0);
+    if (sumWinsEl) sumWinsEl.textContent = String(stats.wins || 0);
+    if (sumLossesEl) sumLossesEl.textContent = String(stats.losses || 0);
+    if (sumWinrateEl) sumWinrateEl.textContent = `${Number(stats.winrate || 0).toFixed(1)}%`;
+  }
+
+  function addSignalToStore(symbol, side, price) {
+    ensureDay(state.store, state.dayKey);
+    const rec = { time: nowHMS(), symbol, side, price };
+    state.store[state.dayKey].signals.unshift(rec);
+    // manter tamanho razoável
+    if (state.store[state.dayKey].signals.length > 1000) state.store[state.dayKey].signals.length = 1000;
+    saveStore();
+  }
+
+  function addResultToStore(symbol, result) {
+    ensureDay(state.store, state.dayKey);
+    const rec = { time: nowHMS(), symbol, result };
+    state.store[state.dayKey].results.unshift(rec);
+    const stats = state.store[state.dayKey].stats;
+    stats.total = (stats.total || 0) + 1;
+    if (result === 'WIN') stats.wins = (stats.wins || 0) + 1;
+    stats.losses = Math.max(0, stats.total - stats.wins);
+    stats.winrate = stats.total > 0 ? (stats.wins / stats.total) * 100 : 0;
+    saveStore();
+    updateDailySummaryUI();
+  }
+
+  function loadDayToUI() {
+    const day = state.store[state.dayKey];
+    if (!day) return;
+    // Limpar feeds visuais e repopular com o dia atual
+    if (signalsFeedEl) signalsFeedEl.innerHTML = '';
+    if (resultsFeedEl) resultsFeedEl.innerHTML = '';
+    // Popular sinais (mais antigos no fim, mostramos do mais recente para cima)
+    for (const s of day.signals.slice().reverse()) {
+      const li = document.createElement('li');
+      li.className = 'item';
+      const sideClass = s.side === 'CALL' ? 'side-call' : 'side-put';
+      const priceDir = s.side === 'CALL' ? 'up' : 'down';
+      li.innerHTML = `
+        <span class="time-badge">${s.time}</span>
+        <span class="text">🔔 <strong class="symbol">${s.symbol}</strong> <span class="${sideClass}">${s.side}</span></span>
+        <span class="price ${priceDir}">${Number(s.price).toFixed(6).replace(/\.?(0+)$/, '')}</span>
+      `;
+      signalsFeedEl && signalsFeedEl.appendChild(li);
+    }
+    // Popular resultados
+    for (const r of day.results.slice().reverse()) {
+      const li = document.createElement('li');
+      li.className = 'item';
+      li.innerHTML = `
+        <span class="time-badge">${r.time}</span>
+        <span class="text"><strong class="symbol">${r.symbol}</strong> <span class="result ${r.result === 'WIN' ? 'win' : 'loss'}">${r.result}</span></span>
+        <span class="price">—</span>
+      `;
+      resultsFeedEl && resultsFeedEl.appendChild(li);
+    }
+    updateDailySummaryUI();
+  }
+
+  function newDaySession() {
+    state.dayKey = getDayKey();
+    ensureDay(state.store, state.dayKey);
+    loadDayToUI();
   }
 
   // ===== Beeps =====
@@ -313,6 +427,7 @@
       state.pending[symbol] = { side, price: lp, ts: workingTime };
       beep(1000, 200);
       prependSignalItem(symbol, side, lp);
+      addSignalToStore(symbol, side, lp);
     }
   }
 
@@ -343,6 +458,7 @@
 
       beep(result === 'WIN' ? 800 : 400, 400);
       prependResultItem(symbol, result, ent.entryPrice, exit);
+      addResultToStore(symbol, result);
 
       state.entry[symbol] = null;
     }
@@ -354,6 +470,15 @@
       const d = new Date();
       const seconds = d.getSeconds();
       const minuteStamp = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}-${d.getHours()}-${d.getMinutes()}`;
+
+      // Atualiza relógio a cada tick do scheduler
+      updateClock();
+
+      // Verifica virada de dia
+      const keyNow = getDayKey(d);
+      if (state.dayKey !== keyNow) {
+        newDaySession();
+      }
 
       if (seconds >= ANNOUNCE_MIN && seconds <= ANNOUNCE_MAX) {
         // Para evitar múltiplas execuções redundantes, não bloqueamos aqui
@@ -378,11 +503,31 @@
   // ===== Inicialização =====
   async function init() {
     setStatus('Carregando...', 'warn');
+    state.store = loadStore();
+    newDaySession();
     await preloadAll();
-    // Atualizar tickers iniciais
     for (const s of SYMBOLS) updateTicker(s);
     openWS();
     startScheduler();
+
+    // Botões topo
+    if (btnReconnect) {
+      btnReconnect.addEventListener('click', () => {
+        setStatus('Reconectando...', 'warn');
+        openWS();
+        // mostrar mensagem rápida
+        setStatus('Reconectado com sucesso', 'ok');
+        setTimeout(() => setStatus('Conectado', 'ok'), 2000);
+      });
+    }
+    if (btnReset) {
+      btnReset.addEventListener('click', () => {
+        ensureDay(state.store, state.dayKey);
+        state.store[state.dayKey] = { signals: [], results: [], stats: { total: 0, wins: 0, losses: 0, winrate: 0 } };
+        saveStore();
+        loadDayToUI();
+      });
+    }
   }
 
   // Boot

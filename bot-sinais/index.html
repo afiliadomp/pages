@@ -19,10 +19,20 @@
         </div>
         <div class="header-right">
           <span id="connStatus" class="status-badge">Desconectando…</span>
+          <div class="top-actions">
+            <button id="btnReconnect" class="btn btn-reconnect" type="button" title="Reconectar">🔄 Reconectar</button>
+            <button id="btnReset" class="btn btn-reset" type="button" title="Reset diário">🧹 Reset diário</button>
+          </div>
         </div>
       </header>
 
       <main id="content">
+        <section id="panelTop" class="section" aria-label="Painel superior">
+          <div id="clock" class="clock" aria-live="polite">--:--:--</div>
+          <div id="summary" class="summary">
+            📊 Total: <span id="sum-total">0</span> | Wins: <span id="sum-wins">0</span> | Losses: <span id="sum-losses">0</span> | Winrate: <span id="sum-winrate">0%</span>
+          </div>
+        </section>
         <section id="ticker" class="section" aria-label="Ticker em tempo real">
           <h2 class="section-title">Ticker</h2>
           <div class="grid cards">
