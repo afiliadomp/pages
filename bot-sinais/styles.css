@@ -165,6 +165,35 @@ p { margin: 0; }
 .ticker-card .card-row { margin-bottom: var(--space-1); }
 .ticker-card .price { text-align: right; }
 
+/* Métricas em cards e feeds */
+.metrics {
+  font-size: 0.85rem;
+  color: #bbb;
+  margin-top: 2px;
+}
+.metrics-inline {
+  font-size: 0.8rem;
+  color: #aaa;
+  margin-top: 2px;
+  font-family: monospace;
+}
+
+/* Badge para lado CALL/PUT nos resultados */
+.side-badge {
+  font-size: 0.75rem;
+  padding: 2px 6px;
+  border-radius: 6px;
+  margin-left: 6px;
+  background: #1a1f29;
+  color: #cfd6e4;
+}
+.side-badge.side-call {
+  border: 1px solid rgba(0, 200, 120, 0.35);
+}
+.side-badge.side-put {
+  border: 1px solid rgba(255, 80, 80, 0.35);
+}
+
 /* Feeds: sinais e resultados */
 .feed {
   max-height: 340px;

@@ -91,22 +91,75 @@
     arrowEl.classList.remove('up', 'down', 'flat');
     arrowEl.classList.add(dir);
   }
+  // Exibir métricas em tempo real nos cards do ticker
+  function formatMetrics(symbol) {
+    const closes = state.closes[symbol];
+    if (!closes || closes.length < (RSI_PERIOD + STOCH_PERIOD)) return null;
+    const working = closes.slice();
+    const lp = state.lastPrice[symbol];
+    if (Number.isFinite(lp)) working.push(lp);
+
+    const rsiVal = rsi(working, RSI_PERIOD);
+    const sd = stochRsi(working, RSI_PERIOD, STOCH_PERIOD, K_SMOOTH, D_SMOOTH);
+    const atrVal = atr(working, ATR_PERIOD);
+
+    const lastRsi = rsiVal ? Number(rsiVal[rsiVal.length - 1]).toFixed(1) : '—';
+    const kVal = sd ? Number(sd.K).toFixed(1) : '—';
+    const dVal = sd ? Number(sd.D).toFixed(1) : '—';
+    const atrFmt = atrVal ? atrVal.toFixed(5) : '—';
+
+    return `RSI:${lastRsi} | K:${kVal} | D:${dVal} | ATR:${atrFmt}`;
+  }
+
+  function updateMetrics(symbol) {
+    const closes = state.closes[symbol];
+    if (!closes || closes.length < (RSI_PERIOD + STOCH_PERIOD)) return;
+    const working = closes.slice();
+    const lp = state.lastPrice[symbol];
+    if (Number.isFinite(lp)) working.push(lp);
+
+    const rsiVal = rsi(working, RSI_PERIOD);
+    const sd = stochRsi(working, RSI_PERIOD, STOCH_PERIOD, K_SMOOTH, D_SMOOTH);
+    const atrVal = atr(working, ATR_PERIOD);
+
+    const lastRsiNum = rsiVal ? Number(rsiVal[rsiVal.length - 1]) : null;
+    const kNum = sd ? Number(sd.K) : null;
+    const dVal = sd ? Number(sd.D).toFixed(1) : '—';
+    const lastRsi = lastRsiNum != null ? lastRsiNum.toFixed(1) : '—';
+    const kVal = kNum != null ? kNum.toFixed(1) : '—';
+    const atrFmt = atrVal ? atrVal.toFixed(5) : '—';
+
+    const el = document.getElementById(`metrics-${symbol}`);
+    if (el) {
+      const color = (lastRsiNum != null && lastRsiNum >= 70) || (kNum != null && kNum >= 90)
+        ? '#f66'
+        : (lastRsiNum != null && lastRsiNum <= 30) || (kNum != null && kNum <= 10)
+        ? '#4f8'
+        : '#bbb';
+      el.innerHTML = `<span style="color:${color}">RSI:${lastRsi}</span> | K:${kVal} | D:${dVal} | ATR:${atrFmt}`;
+    }
+  }
 
   function prependSignalItem(symbol, side, price) {
     if (!signalsFeedEl) return;
+    const metrics = formatMetrics(symbol);
     const li = document.createElement('li');
     li.className = 'item';
     li.innerHTML = `
       <span class="time-badge">${nowHMS()}</span>
-      <span class="text">🔔 <strong class="symbol">${symbol}</strong> <span class="${side === 'CALL' ? 'side-call' : 'side-put'}">${side}</span></span>
-      <span class="price ${side === 'CALL' ? 'up' : 'down'}">${Number(price).toFixed(6).replace(/\.?(0+)$/, '')}</span>
+      <span class="text">🔔 <strong class="symbol">${symbol}</strong> 
+        <span class="${side === 'CALL' ? 'side-call' : 'side-put'}">${side}</span>
+      </span>
+      <span class="price ${side === 'CALL' ? 'up' : 'down'}">${Number(price).toFixed(6)}</span>
+      <div class="metrics-inline">${metrics ?? ''}</div>
     `;
     signalsFeedEl.insertBefore(li, signalsFeedEl.firstChild);
     trimFeed(signalsFeedEl);
   }
 
-  function prependResultItem(symbol, result, entryPrice, exitPrice) {
+  function prependResultItem(symbol, result, side, entryPrice, exitPrice) {
     if (!resultsFeedEl) return;
+    const metrics = formatMetrics(symbol);
     const li = document.createElement('li');
     li.className = 'item';
     const priceClass = result === 'WIN' ? 'win' : 'loss';
@@ -114,8 +167,13 @@
     const exitFmt = Number(exitPrice).toFixed(4);
     li.innerHTML = `
       <span class="time-badge">${nowHMS()}</span>
-      <span class="text"><strong class="symbol">${symbol}</strong> <span class="result ${result === 'WIN' ? 'win' : 'loss'}">${result}</span></span>
+      <span class="text">
+        <strong class="symbol">${symbol}</strong>
+        <span class="side-badge ${side === 'CALL' ? 'side-call' : 'side-put'}">${side}</span>
+        <span class="result ${result === 'WIN' ? 'win' : 'loss'}">${result}</span>
+      </span>
       <span class="price ${priceClass}">${entryFmt} → ${exitFmt}</span>
+      <div class="metrics-inline">${metrics ?? ''}</div>
     `;
     resultsFeedEl.insertBefore(li, resultsFeedEl.firstChild);
     trimFeed(resultsFeedEl);
@@ -181,7 +239,7 @@
 
   function addSignalToStore(symbol, side, price) {
     ensureDay(state.store, state.dayKey);
-    const rec = { time: nowHMS(), symbol, side, price };
+    const rec = { time: nowHMS(), symbol, side, price, metrics: formatMetrics(symbol) };
     state.store[state.dayKey].signals.unshift(rec);
     // manter tamanho razoável
     if (state.store[state.dayKey].signals.length > 1000) state.store[state.dayKey].signals.length = 1000;
@@ -191,7 +249,7 @@
   function addResultToStore(symbol, result, side, entryPrice, exitPrice) {
     ensureDay(state.store, state.dayKey);
     const day = state.store[state.dayKey];
-    const rec = { time: nowHMS(), symbol, side, result, entryPrice, exitPrice };
+    const rec = { time: nowHMS(), symbol, side, result, entryPrice, exitPrice, metrics: formatMetrics(symbol) };
     day.results.unshift(rec);
     // Estatísticas diárias (incremental)
     day.stats.total = (day.stats.total || 0) + 1;
@@ -214,10 +272,12 @@
       li.className = 'item';
       const sideClass = s.side === 'CALL' ? 'side-call' : 'side-put';
       const priceDir = s.side === 'CALL' ? 'up' : 'down';
+      const metricsInline = s.metrics ?? formatMetrics(s.symbol) ?? '';
       li.innerHTML = `
         <span class="time-badge">${s.time}</span>
         <span class="text">🔔 <strong class="symbol">${s.symbol}</strong> <span class="${sideClass}">${s.side}</span></span>
-        <span class="price ${priceDir}">${Number(s.price).toFixed(6).replace(/\.?(0+)$/, '')}</span>
+        <span class="price ${priceDir}">${Number(s.price).toFixed(6)}</span>
+        <div class="metrics-inline">${metricsInline}</div>
       `;
       signalsFeedEl && signalsFeedEl.appendChild(li);
     }
@@ -228,10 +288,16 @@
       const entryFmt = Number(r.entryPrice).toFixed(4);
       const exitFmt = Number(r.exitPrice).toFixed(4);
       const priceClass = r.result === 'WIN' ? 'win' : 'loss';
+      const metricsInline = r.metrics ?? formatMetrics(r.symbol) ?? '';
       li.innerHTML = `
         <span class="time-badge">${r.time}</span>
-        <span class="text"><strong class="symbol">${r.symbol}</strong> <span class="result ${r.result === 'WIN' ? 'win' : 'loss'}">${r.result}</span></span>
+        <span class="text">
+          <strong class="symbol">${r.symbol}</strong>
+          <span class="side-badge ${r.side === 'CALL' ? 'side-call' : 'side-put'}">${r.side}</span>
+          <span class="result ${r.result === 'WIN' ? 'win' : 'loss'}">${r.result}</span>
+        </span>
         <span class="price ${priceClass}">${entryFmt} → ${exitFmt}</span>
+        <div class="metrics-inline">${metricsInline}</div>
       `;
       resultsFeedEl && resultsFeedEl.appendChild(li);
     }
@@ -491,7 +557,7 @@
 
       // UI e persistência
       beep(result === 'WIN' ? 800 : 400, 400);
-      prependResultItem(symbol, result, entryPrice, exitPrice);
+      prependResultItem(symbol, result, side, entryPrice, exitPrice);
       addResultToStore(symbol, result, side, entryPrice, exitPrice);
 
       state.entry[symbol] = null;
@@ -530,7 +596,10 @@
 
     // Atualização do ticker a cada 1s
     setInterval(() => {
-      for (const s of SYMBOLS) updateTicker(s);
+      for (const s of SYMBOLS) { 
+        updateTicker(s);
+        updateMetrics(s);
+      }
     }, 1000);
   }
 
@@ -540,7 +609,7 @@
     state.store = loadStore();
     newDaySession();
     await preloadAll();
-    for (const s of SYMBOLS) updateTicker(s);
+    for (const s of SYMBOLS) { updateTicker(s); updateMetrics(s); }
     openWS();
     startScheduler();
 
