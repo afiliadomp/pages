@@ -18,11 +18,8 @@
   const FEED_MAX_ITEMS = 100;
   const STORAGE_KEY = 'stoch_rsi_signals_web';
 
-  // ===== Suporte/Resistência (SR) =====
-  const SR_LOOKBACK = 300;
-  const SR_MIN_TOUCHES = 4;
-  const SR_BIN_SIZE_ATR = 0.35;
-  const SR_PROX_ATR = 0.18;
+  // ===== Lookback e temporização =====
+  const SR_LOOKBACK = 300; // usado para preload de candles (compatibilidade)
   const COOLDOWN_BARS = 1;
 
   // ===== Modo de Operação (compatibilidade) =====
@@ -32,7 +29,7 @@
     closes: Object.fromEntries(SYMBOLS.map(s => [s, []])),
     highs: Object.fromEntries(SYMBOLS.map(s => [s, []])),
     lows:  Object.fromEntries(SYMBOLS.map(s => [s, []])),
-    sr:    Object.fromEntries(SYMBOLS.map(s => [s, { top: null, bottom: null, atr: null, updated: 0 }])),
+    trends: Object.fromEntries(SYMBOLS.map(s => [s, { ltb: null, lta: null }])),
     modes: Object.fromEntries(SYMBOLS.map(s => [s, 'REVERSAO'])),
     cooldownUntil: Object.fromEntries(SYMBOLS.map(s => [s, 0])),
     lastPrice: Object.fromEntries(SYMBOLS.map(s => [s, null])),
@@ -108,6 +105,7 @@
     arrowEl.textContent = arrow;
     arrowEl.classList.remove('up', 'down', 'flat');
     arrowEl.classList.add(dir);
+    updateBreakHighlight(symbol);
   }
   // Exibir métricas em tempo real nos cards do ticker
   function formatMetrics(symbol) {
@@ -421,72 +419,75 @@
     return avg;
   }
 
-  // ===== Suporte/Resistência: Helpers =====
-  function buildBins(minP, maxP, step) {
-    const bins = [];
-    for (let p = minP; p <= maxP + step * 0.5; p += step) bins.push({ c: 0, p });
-    return bins;
-  }
-  function bumpClosestBin(bins, price, step) {
-    if (!Number.isFinite(price)) return;
-    let best = 0, bi = 0;
-    for (let i = 0; i < bins.length; i++) {
-      const d = Math.abs(bins[i].p - price);
-      if (i === 0 || d < best) { best = d; bi = i; }
+  // ===== Tendências (LTB/LTA) =====
+  function computeTrendLines(symbol) {
+    const highs = state.highs[symbol];
+    const lows  = state.lows[symbol];
+    if (!highs || !lows || highs.length < 20 || lows.length < 20) return null;
+
+    const lastHighs = [];
+    const lastLows = [];
+    for (let i = highs.length - 2; i > 1; i--) {
+      const hPrev = highs[i - 1], hNext = highs[i + 1], hCur = highs[i];
+      const lPrev = lows[i - 1], lNext = lows[i + 1], lCur = lows[i];
+      if (Number.isFinite(hCur) && Number.isFinite(hPrev) && Number.isFinite(hNext) && hCur > hPrev && hCur > hNext) lastHighs.push({ idx: i, val: hCur });
+      if (Number.isFinite(lCur) && Number.isFinite(lPrev) && Number.isFinite(lNext) && lCur < lPrev && lCur < lNext) lastLows.push({ idx: i, val: lCur });
+      if (lastHighs.length >= 3 && lastLows.length >= 3) break;
     }
-    const weight = Math.max(0.2, 1 - (best / step));
-    bins[bi].c += weight;
-  }
-  function computeSRLevels(symbol) {
-    const closes = state.closes[symbol];
-    const highs  = state.highs[symbol];
-    const lows   = state.lows[symbol];
-    if (!closes || closes.length < Math.min(SR_LOOKBACK, 50)) return null;
-    // Proteção: requer highs e lows disponíveis
-    if (!highs || !highs.length || !lows || !lows.length) return null;
-    const n = Math.min(SR_LOOKBACK, closes.length);
-    const c = closes.slice(-n), h = highs.slice(-n), l = lows.slice(-n);
-    const atrVal = atr(c, Math.min(ATR_PERIOD, Math.floor(n * 0.4))) ?? 0;
-    if (!Number.isFinite(atrVal) || atrVal <= 0) return null;
-    const minP = Math.min(...l), maxP = Math.max(...h);
-    const step = Math.max(atrVal * SR_BIN_SIZE_ATR, (maxP - minP) / 200);
-    const topBins = buildBins(minP, maxP, step);
-    const botBins = buildBins(minP, maxP, step);
-    for (let i = 0; i < h.length; i++) bumpClosestBin(topBins, h[i], step);
-    for (let i = 0; i < l.length; i++) bumpClosestBin(botBins, l[i], step);
-    if (!topBins.length || !botBins.length) return { top: null, bottom: null, atr: atrVal };
-    const topBest = topBins.reduce((a, b) => (b.c > a.c ? b : a), topBins[0]);
-    const botBest = botBins.reduce((a, b) => (b.c > a.c ? b : a), botBins[0]);
-    if (topBest.c < SR_MIN_TOUCHES || botBest.c < SR_MIN_TOUCHES) return { top: null, bottom: null, atr: atrVal };
-    return { top: topBest.p, bottom: botBest.p, atr: atrVal };
+
+    if (lastHighs.length < 2 || lastLows.length < 2) return null;
+
+    const [h1, h2] = lastHighs.slice(0, 2);
+    const [l1, l2] = lastLows.slice(0, 2);
+    const slopeHigh = (h2.val - h1.val) / (h2.idx - h1.idx);
+    const slopeLow  = (l2.val - l1.val) / (l2.idx - l1.idx);
+
+    const lastIdx = highs.length - 1;
+    const ltb = h2.val + slopeHigh * (lastIdx - h2.idx);
+    const lta = l2.val + slopeLow  * (lastIdx - l2.idx);
+
+    if (!Number.isFinite(ltb) || !Number.isFinite(lta)) return null;
+    return { ltb, lta };
   }
 
-  // Atualiza UI com níveis SR por símbolo
-  function updateSRUI(symbol) {
-    const topEl = document.getElementById(`sr-top-${symbol}`);
-    const botEl = document.getElementById(`sr-bot-${symbol}`);
+  function updateBreakHighlight(symbol) {
+    const card = document.querySelector(`.ticker-card[data-symbol="${symbol}"]`);
+    if (!card) return;
+    const tr = state.trends?.[symbol];
+    const lp = state.lastPrice[symbol];
+    if (!tr || !Number.isFinite(lp) || !Number.isFinite(tr.ltb) || !Number.isFinite(tr.lta)) {
+      card.removeAttribute('data-break');
+      return;
+    }
+    if (lp > tr.ltb) card.setAttribute('data-break', 'CALL');
+    else if (lp < tr.lta) card.setAttribute('data-break', 'PUT');
+    else card.setAttribute('data-break', 'NONE');
+  }
+
+  // Atualiza UI com LTB/LTA por símbolo
+  function updateTrendUI(symbol) {
+    const ltbEl = document.getElementById(`ltb-${symbol}`);
+    const ltaEl = document.getElementById(`lta-${symbol}`);
 
     const highs = state.highs[symbol];
-    const lows = state.lows[symbol];
+    const lows  = state.lows[symbol];
     if (!highs || !highs.length || !lows || !lows.length) {
-      if (topEl) topEl.textContent = '—';
-      if (botEl) botEl.textContent = '—';
+      if (ltbEl) ltbEl.textContent = '—';
+      if (ltaEl) ltaEl.textContent = '—';
       return;
     }
 
-    const levels = computeSRLevels(symbol);
-    const topFmt = levels && levels.top != null ? Number(levels.top).toFixed(6).replace(/\.?(0+)$/, '') : '—';
-    const botFmt = levels && levels.bottom != null ? Number(levels.bottom).toFixed(6).replace(/\.?(0+)$/, '') : '—';
-
-    if (state.sr && state.sr[symbol]) {
-      state.sr[symbol].top = levels ? levels.top : null;
-      state.sr[symbol].bottom = levels ? levels.bottom : null;
-      state.sr[symbol].atr = levels ? levels.atr : null;
-      state.sr[symbol].updated = (state.sr[symbol].updated || 0) + 1;
+    const tr = computeTrendLines(symbol);
+    if (state.trends && state.trends[symbol]) {
+      state.trends[symbol].ltb = tr ? tr.ltb : null;
+      state.trends[symbol].lta = tr ? tr.lta : null;
     }
 
-    if (topEl) topEl.textContent = topFmt;
-    if (botEl) botEl.textContent = botFmt;
+    const ltbFmt = tr && tr.ltb != null ? Number(tr.ltb).toFixed(4) : '—';
+    const ltaFmt = tr && tr.lta != null ? Number(tr.lta).toFixed(4) : '—';
+    if (ltbEl) ltbEl.textContent = ltbFmt;
+    if (ltaEl) ltaEl.textContent = ltaFmt;
+    updateBreakHighlight(symbol);
   }
 
   // ===== Dados: Preload =====
@@ -510,8 +511,9 @@
         const last = closes.at(-1);
         state.prevPrice[sym] = last;
         state.lastPrice[sym] = last;
-        const sr = computeSRLevels(sym);
-        if (sr) { state.sr[sym] = { ...sr, updated: Date.now() }; updateSRUI(sym); }
+        const tr = computeTrendLines(sym);
+        if (tr) { state.trends[sym] = { ltb: tr.ltb, lta: tr.lta }; }
+        updateTrendUI(sym);
       } catch (_) {}
     });
     await Promise.all(tasks);
@@ -549,7 +551,7 @@
             updateTicker(symbol);
           }
           if (k.x === true) {
-            // candle fechado: empurrar H/L/C e recalcular SR
+            // candle fechado: empurrar H/L/C e recalcular tendências
             const highPrice  = Number(k.h);
             const lowPrice   = Number(k.l);
             const cArr = state.closes[symbol];
@@ -561,8 +563,9 @@
             if (cArr.length > MAX_CLOSES) cArr.splice(0, cArr.length - MAX_CLOSES);
             if (hArr.length > MAX_CLOSES) hArr.splice(0, hArr.length - MAX_CLOSES);
             if (lArr.length > MAX_CLOSES) lArr.splice(0, lArr.length - MAX_CLOSES);
-            const sr = computeSRLevels(symbol);
-            if (sr) { state.sr[symbol] = { ...sr, updated: Date.now() }; updateSRUI(symbol); }
+            const tr = computeTrendLines(symbol);
+            if (tr) { state.trends[symbol] = { ltb: tr.ltb, lta: tr.lta }; }
+            updateTrendUI(symbol);
           }
         } catch (_) { /* silencioso */ }
       };
@@ -603,52 +606,26 @@
       const rsiS = rsi(working, RSI_PERIOD);
       if (!sd || !rsiS) continue;
       const rsiNow = rsiS.at(-1);
-      const { top, bottom, atr } = state.sr[symbol] || {};
-      if (!Number.isFinite(atr) || (!Number.isFinite(top) && !Number.isFinite(bottom))) continue;
-      const prox = Math.max(atr * SR_PROX_ATR, 0);
+      const tr = state.trends[symbol] || {};
+      if (!Number.isFinite(tr.ltb) && !Number.isFinite(tr.lta)) continue;
       let side = null;
-      if (Number.isFinite(top) && Math.abs(lp - top) <= prox && sd.K >= 98 && sd.D >= 98 && rsiNow >= 70)
-        side = 'PUT';
-      else if (Number.isFinite(bottom) && Math.abs(lp - bottom) <= prox && sd.K <= 2 && sd.D <= 2 && rsiNow <= 30)
-        side = 'CALL';
-      if (!side) continue;
-      const lastClose = closes.at(-1);
-      const prevClose = closes.at(-2) ?? lastClose;
-      const highPrice = Math.max(...state.highs[symbol].slice(-1));
-      const lowPrice  = Math.min(...state.lows[symbol].slice(-1));
       const mode = state.modes?.[symbol] || MODE;
-
-      if (mode === 'REVERSAO') {
-        // ===== Filtro de rejeição confirmada =====
-        // 1️⃣ Ignora se candle atual OU anterior fechou além do nível
-        if (side === 'PUT' && (lastClose > top || prevClose > top)) {
-          console.log(`[${symbol}] Rompeu resistência (${lastClose.toFixed(4)} > ${top.toFixed(4)}) — ignorando reversão.`);
+      if (mode === 'ROMPIMENTO') {
+        if (Number.isFinite(tr.ltb) && lp > tr.ltb) side = 'CALL';
+        else if (Number.isFinite(tr.lta) && lp < tr.lta) side = 'PUT';
+        else continue;
+      } else {
+        if (Number.isFinite(tr.ltb) && Number.isFinite(tr.lta) && lp < tr.ltb && lp > tr.lta) {
+          if (sd.K >= 98 && sd.D >= 98 && rsiNow >= 70) side = 'PUT';
+          else if (sd.K <= 2 && sd.D <= 2 && rsiNow <= 30) side = 'CALL';
+          else continue;
+        } else {
           continue;
-        }
-        if (side === 'CALL' && (lastClose < bottom || prevClose < bottom)) {
-          console.log(`[${symbol}] Rompeu suporte (${lastClose.toFixed(4)} < ${bottom.toFixed(4)}) — ignorando reversão.`);
-          continue;
-        }
-
-        // 2️⃣ Ignora se candle teve corpo completo fora da zona SR (wick de rompimento sem volta)
-        if (side === 'PUT' && highPrice > top && lastClose > top) {
-          console.log(`[${symbol}] Candle fechou fora da resistência — rompimento confirmado, ignorando.`);
-          continue;
-        }
-        if (side === 'CALL' && lowPrice < bottom && lastClose < bottom) {
-          console.log(`[${symbol}] Candle fechou fora do suporte — rompimento confirmado, ignorando.`);
-          continue;
-        }
-      } else if (mode === 'ROMPIMENTO') {
-        // ===== Lógica de rompimento confirmada =====
-        if (side === 'PUT' && lastClose > top) {
-          console.log(`[${symbol}] Rompeu resistência — invertendo para CALL (rompimento confirmado).`);
-          side = 'CALL';
-        } else if (side === 'CALL' && lastClose < bottom) {
-          console.log(`[${symbol}] Rompeu suporte — invertendo para PUT (rompimento confirmado).`);
-          side = 'PUT';
         }
       }
+      const lastClose = closes.at(-1);
+      const prevClose = closes.at(-2) ?? lastClose;
+      updateBreakHighlight(symbol);
       state.pending[symbol] = { side, price: lp, ts: workingTime };
       beep(1000, 220);
       prependSignalItem(symbol, side, lp);
@@ -669,24 +646,24 @@
     if (!recentRSI || recentRSI.length < 10) return;
     const avgRSI = recentRSI.slice(-10).reduce((a,b)=>a+b,0)/10;
 
-    const atrVal = atr(closes, ATR_PERIOD); // disponível se precisar
-    const sr = state.sr[symbol];
+    const tr = state.trends[symbol];
     const price = state.lastPrice[symbol];
     const prev = closes.at(-2);
 
     let newMode = state.modes[symbol];
 
-    // === Detecta rompimentos ===
-    if (sr?.top && price > sr.top && prev <= sr.top) newMode = 'ROMPIMENTO';
-    else if (sr?.bottom && price < sr.bottom && prev >= sr.bottom) newMode = 'ROMPIMENTO';
-    // === Volta pro modo reversão se voltar pro canal ===
-    else if (sr?.top && sr?.bottom && price < sr.top && price > sr.bottom && avgRSI < 65 && avgRSI > 35)
+    // === Detecta rompimentos com LTB/LTA ===
+    if (tr?.ltb != null && Number.isFinite(price) && price > tr.ltb && prev <= tr.ltb) newMode = 'ROMPIMENTO';
+    else if (tr?.lta != null && Number.isFinite(price) && price < tr.lta && prev >= tr.lta) newMode = 'ROMPIMENTO';
+    // === Volta pro modo reversão se voltar ao canal ===
+    else if (tr?.ltb != null && tr?.lta != null && price < tr.ltb && price > tr.lta && avgRSI < 65 && avgRSI > 35)
       newMode = 'REVERSAO';
 
     if (newMode !== state.modes[symbol]) {
       state.modes[symbol] = newMode;
       console.log(`[AUTO-MODE] ${symbol} mudou para ${newMode}`);
       updateSymbolModeUI(symbol, newMode);
+      updateBreakHighlight(symbol);
     }
   }
 
@@ -777,7 +754,7 @@
       for (const s of SYMBOLS) { 
         updateTicker(s);
         updateMetrics(s);
-        updateSRUI(s);
+        updateTrendUI(s);
         autoAdjustModePerSymbol(s);
       }
     }, 1000);
@@ -789,7 +766,7 @@
     state.store = loadStore();
     newDaySession();
     await preloadAll();
-    for (const s of SYMBOLS) { updateTicker(s); updateMetrics(s); updateSRUI(s); }
+    for (const s of SYMBOLS) { updateTicker(s); updateMetrics(s); updateTrendUI(s); }
     openWS();
     startScheduler();
 
