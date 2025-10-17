@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0c0f14" />
+    <title>Stoch RSI Signals (1m)</title>
+    <meta name="description" content="Bot de sinais Stoch RSI (1m) para ADA, XRP, ETH, BTC." />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📈</text></svg>">
+    <link rel="stylesheet" href="styles.css" />
+    <script src="app.js" defer></script>
+  </head>
+  <body class="theme-dark">
+    <div id="app">
+      <header id="appHeader" class="app-header">
+        <div class="header-left">
+          <h1 class="app-title">Stoch RSI Signals (1m)</h1>
+        </div>
+        <div class="header-right">
+          <span id="connStatus" class="status-badge">Desconectando…</span>
+          <div class="top-actions">
+            <button id="btnReconnect" class="btn btn-reconnect" type="button" title="Reconectar">🔄 Reconectar</button>
+            <button id="btnReset" class="btn btn-reset" type="button" title="Reset diário">🧹 Reset diário</button>
+          </div>
+      </div>
+    </header>
+      <div id="modeStatusBar" class="mode-bar mode-auto">
+        ⚙️ <strong>Modo Automático</strong> — cada ativo alterna entre reversão e rompimento dinamicamente.
+      </div>
+
+      <main id="content">
+        <section id="panelTop" class="section" aria-label="Painel superior">
+          <div id="clock" class="clock" aria-live="polite">--:--:--</div>
+          <div id="summary" class="summary">
+            📊 Total: <span id="sum-total">0</span> | Wins: <span id="sum-wins">0</span> | Losses: <span id="sum-losses">0</span> | Winrate: <span id="sum-winrate">0%</span>
+          </div>
+        </section>
+        <section id="ticker" class="section" aria-label="Ticker em tempo real">
+          <h2 class="section-title">Ticker</h2>
+          <div class="grid cards">
+            <article class="card ticker-card" data-symbol="ADAUSDT">
+              <div class="card-row">
+                <img src="adausdt.png" alt="ADA" class="symbol-icon">
+                <span class="symbol">ADAUSDT</span>
+                <span class="arrow" id="arrow-ADAUSDT">→</span>
+              </div>
+              <div class="metrics" id="metrics-ADAUSDT">RSI: — | K: — | D: — | ATR: —</div>
+              <div class="sr">
+                <div>preço teto <span id="sr-top-ADAUSDT">—</span> ↑</div>
+                <div>máximo preço baixo <span id="sr-bot-ADAUSDT">—</span> ↓</div>
+              </div>
+              <div class="price" id="price-ADAUSDT">—</div>
+            </article>
+            <article class="card ticker-card" data-symbol="XRPUSDT">
+              <div class="card-row">
+                <img src="XRPUSDT.png" alt="XRP" class="symbol-icon">
+                <span class="symbol">XRPUSDT</span>
+                <span class="arrow" id="arrow-XRPUSDT">→</span>
+              </div>
+              <div class="metrics" id="metrics-XRPUSDT">RSI: — | K: — | D: — | ATR: —</div>
+              <div class="sr">
+                <div>preço teto <span id="sr-top-XRPUSDT">—</span> ↑</div>
+                <div>máximo preço baixo <span id="sr-bot-XRPUSDT">—</span> ↓</div>
+              </div>
+              <div class="price" id="price-XRPUSDT">—</div>
+            </article>
+            <article class="card ticker-card" data-symbol="ETHUSDT">
+              <div class="card-row">
+                <img src="ETHUSDT.png" alt="ETH" class="symbol-icon">
+                <span class="symbol">ETHUSDT</span>
+                <span class="arrow" id="arrow-ETHUSDT">→</span>
+              </div>
+              <div class="metrics" id="metrics-ETHUSDT">RSI: — | K: — | D: — | ATR: —</div>
+              <div class="sr">
+                <div>preço teto <span id="sr-top-ETHUSDT">—</span> ↑</div>
+                <div>máximo preço baixo <span id="sr-bot-ETHUSDT">—</span> ↓</div>
+              </div>
+              <div class="price" id="price-ETHUSDT">—</div>
+            </article>
+            <article class="card ticker-card" data-symbol="BTCUSDT">
+              <div class="card-row">
+                <img src="BTCUSDT.png" alt="BTC" class="symbol-icon">
+                <span class="symbol">BTCUSDT</span>
+                <span class="arrow" id="arrow-BTCUSDT">→</span>
+              </div>
+              <div class="metrics" id="metrics-BTCUSDT">RSI: — | K: — | D: — | ATR: —</div>
+              <div class="sr">
+                <div>preço teto <span id="sr-top-BTCUSDT">—</span> ↑</div>
+                <div>máximo preço baixo <span id="sr-bot-BTCUSDT">—</span> ↓</div>
+              </div>
+              <div class="price" id="price-BTCUSDT">—</div>
+            </article>
+          </div>
+        </section>
+
+        <section id="signals" class="section" aria-label="Painel de Sinais">
+          <h2 class="section-title">Sinais</h2>
+          <ul id="signalsFeed" class="feed" aria-live="polite" aria-atomic="false"></ul>
+        </section>
+
+        <section id="results" class="section" aria-label="Resultados">
+          <h2 class="section-title">Resultados</h2>
+          <ul id="resultsFeed" class="feed" aria-live="polite" aria-atomic="false"></ul>
+        </section>
+
+        <section id="stats" class="section" aria-label="Estatísticas por símbolo">
+          <h2 class="section-title">Estatísticas</h2>
+          <div class="grid cards">
+            <article class="card stat-card" data-symbol="ADAUSDT">
+              <div class="card-row"><span class="symbol">ADAUSDT</span></div>
+              <div class="stats-row">
+                <span class="metric">Total: <strong id="stat-total-ADAUSDT">0</strong></span>
+                <span class="metric">Wins: <strong id="stat-wins-ADAUSDT">0</strong></span>
+                <span class="metric">Winrate: <strong id="stat-winrate-ADAUSDT">0%</strong></span>
+              </div>
+            </article>
+            <article class="card stat-card" data-symbol="XRPUSDT">
+              <div class="card-row"><span class="symbol">XRPUSDT</span></div>
+              <div class="stats-row">
+                <span class="metric">Total: <strong id="stat-total-XRPUSDT">0</strong></span>
+                <span class="metric">Wins: <strong id="stat-wins-XRPUSDT">0</strong></span>
+                <span class="metric">Winrate: <strong id="stat-winrate-XRPUSDT">0%</strong></span>
+              </div>
+            </article>
+            <article class="card stat-card" data-symbol="ETHUSDT">
+              <div class="card-row"><span class="symbol">ETHUSDT</span></div>
+              <div class="stats-row">
+                <span class="metric">Total: <strong id="stat-total-ETHUSDT">0</strong></span>
+                <span class="metric">Wins: <strong id="stat-wins-ETHUSDT">0</strong></span>
+                <span class="metric">Winrate: <strong id="stat-winrate-ETHUSDT">0%</strong></span>
+              </div>
+            </article>
+            <article class="card stat-card" data-symbol="BTCUSDT">
+              <div class="card-row"><span class="symbol">BTCUSDT</span></div>
+              <div class="stats-row">
+                <span class="metric">Total: <strong id="stat-total-BTCUSDT">0</strong></span>
+                <span class="metric">Wins: <strong id="stat-wins-BTCUSDT">0</strong></span>
+                <span class="metric">Winrate: <strong id="stat-winrate-BTCUSDT">0%</strong></span>
+              </div>
+            </article>
+          </div>
+        </section>
+      </main>
+
+      <footer class="app-footer">
+        <small>Mercado 1m / Binance / uso próprio</small>
+      </footer>
+    </div>
+  </body>
+</html>
