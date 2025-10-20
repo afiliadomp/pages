@@ -1,0 +1,364 @@
+/*
+  Tema dark moderno para Stoch RSI Signals (1m)
+  - Fundo #0f1115, cards #151821, textos #e6e6e6
+  - Acentos em roxo/teal
+  - Tipografia system-ui, responsivo, transições leves
+*/
+
+:root {
+  --bg: #0f1115;
+  --card-bg: #151821;
+  --text: #e6e6e6;
+  --muted: #a7b0c0;
+
+  --accent-purple: #8a7cf8;
+  --accent-teal: #2dd4bf;
+
+  --green-up: #28c76f;
+  --red-down: #ff4d4f;
+  --gray-flat: #9aa0a6;
+
+  --win: #28c76f;
+  --loss: #ff4d4f;
+
+  --border: rgba(255, 255, 255, 0.06);
+  --shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+
+  --radius: 14px;
+  --space-1: 8px;
+  --space-2: 12px;
+  --space-3: 16px;
+  --space-4: 24px;
+  --header-h: 64px;
+}
+
+/* Reset básico e tipografia */
+* {
+  box-sizing: border-box;
+}
+html, body {
+  height: 100%;
+}
+body.theme-dark {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, "Helvetica Neue", Arial, "Apple Color Emoji", "Segoe UI Emoji";
+  font-size: 15px;
+  line-height: 1.4;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+img, svg { display: block; }
+ul { list-style: none; padding: 0; margin: 0; }
+h1, h2, h3 { margin: 0; font-weight: 600; }
+p { margin: 0; }
+
+/* Layout principal */
+#app { min-height: 100%; }
+
+.app-header {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-4);
+  background: rgba(21, 24, 33, 0.9);
+  border-bottom: 1px solid var(--border);
+  backdrop-filter: saturate(150%) blur(6px);
+}
+.app-title { font-size: 18px; letter-spacing: 0.2px; }
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: #11141a;
+  color: var(--muted);
+  font-size: 13px;
+}
+.top-actions { display: inline-flex; gap: 8px; margin-left: 12px; }
+.btn {
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: #131722;
+  color: #cbd5e1;
+  font-size: 13px;
+  cursor: pointer;
+}
+.btn:hover { border-color: rgba(255,255,255,0.12); }
+.btn-reconnect { color: var(--accent-teal); }
+.btn-reset { color: #f472b6; }
+.btn-mode {
+  border-radius: 8px;
+  font-weight: 600;
+  padding: 6px 12px;
+  transition: background 0.3s;
+}
+.btn-mode.rev { background: #0c2610; color: #9f9; }
+.btn-mode.brk { background: #260c0c; color: #f99; }
+.status-badge.ok { color: var(--green-up); border-color: rgba(40, 199, 111, 0.35); }
+.status-badge.warn { color: #f59e0b; border-color: rgba(245, 158, 11, 0.35); }
+.status-badge.err { color: var(--red-down); border-color: rgba(255, 77, 79, 0.35); }
+
+#content {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-4);
+  padding: var(--space-4);
+}
+
+/* Painel superior: relógio e resumo */
+#panelTop { text-align: center; }
+#clock {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 34px;
+  font-weight: 700;
+  color: var(--accent-teal);
+  text-shadow: 0 0 12px rgba(45, 212, 191, 0.35);
+  margin-bottom: var(--space-2);
+}
+#summary {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 15px;
+  color: #e5e7eb;
+}
+
+.section { display: block; }
+.section-title {
+  margin-bottom: var(--space-2);
+  font-size: 16px;
+  color: var(--muted);
+}
+
+.grid.cards {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-3);
+}
+
+.card {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: var(--space-3);
+}
+.card-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.symbol { font-weight: 600; color: #cdd6e5; }
+.price {
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+}
+.price.up { color: var(--green-up); }
+.price.down { color: var(--red-down); }
+.price.flat { color: var(--gray-flat); }
+.arrow { font-size: 16px; }
+.arrow.up { color: var(--green-up); }
+.arrow.down { color: var(--red-down); }
+.arrow.flat { color: var(--gray-flat); }
+
+/* Ticker: linha compacta, símbolo à esquerda, preço/seta à direita */
+.ticker-card .card-row { margin-bottom: var(--space-1); }
+.ticker-card .price { text-align: right; }
+
+/* Métricas em cards e feeds */
+.metrics {
+  font-size: 0.85rem;
+  color: #bbb;
+  margin-top: 2px;
+}
+.sr { font-size: 0.85rem; color: #bbb; margin-top: 2px; }
+.metrics-inline {
+  font-size: 0.8rem;
+  color: #aaa;
+  margin-top: 2px;
+  font-family: monospace;
+}
+
+/* Badge para lado CALL/PUT nos resultados */
+.side-badge {
+  font-size: 0.75rem;
+  padding: 2px 6px;
+  border-radius: 6px;
+  margin-left: 6px;
+  background: #1a1f29;
+  color: #cfd6e4;
+}
+.side-badge.side-call {
+  border: 1px solid rgba(0, 200, 120, 0.35);
+}
+.side-badge.side-put {
+  border: 1px solid rgba(255, 80, 80, 0.35);
+}
+
+/* Feeds: sinais e resultados */
+.feed {
+  max-height: 340px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: #12151c;
+}
+.feed::-webkit-scrollbar { width: 10px; }
+.feed::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 10px; }
+.feed li.item {
+  display: grid;
+  grid-template-columns: 96px 1fr auto;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+}
+.feed li.item:last-child { border-bottom: none; }
+.feed .time-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 80px;
+  padding: 6px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: #0f131a;
+  color: #cbd5e1;
+  font-size: 12px;
+}
+.feed .text { color: #cbd5e1; }
+.feed .side-call { color: var(--accent-teal); font-weight: 600; }
+.feed .side-put { color: #ec4899; font-weight: 600; }
+.feed .price.up { color: var(--green-up); }
+.feed .price.down { color: var(--red-down); }
+.feed .result.win { color: var(--win); font-weight: 600; }
+.feed .result.loss { color: var(--loss); font-weight: 600; }
+
+/* Estatísticas */
+.stat-card .stats-row {
+  display: grid;
+  grid-template-columns: repeat(3, auto);
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+/* Ícone do símbolo nos cards */
+.symbol-icon {
+  width: 40px;
+  height: 40px;
+  margin-right: 8px;
+  border-radius: 50%;
+  vertical-align: middle;
+  background: radial-gradient(circle at 30% 30%, rgba(255,255,255,0.08), rgba(255,255,255,0.02));
+  border: 2px solid rgba(255,255,255,0.14);
+  box-shadow: 0 0 12px rgba(0,0,0,0.35), 0 0 10px rgba(255,255,255,0.10) inset;
+  transform: translateY(2px);
+  object-fit: contain;
+  transition: all 0.3s ease;
+}
+/* Ajuste fino do row para acomodar ícone */
+.card-row { gap: 10px; }
+
+/* Barra de status do modo */
+.mode-bar {
+  text-align: center;
+  font-weight: 600;
+  font-size: 14px;
+  padding: 8px;
+  transition: all 0.4s ease;
+}
+.mode-bar.mode-auto {
+  background: linear-gradient(90deg, #0c3, #060);
+  color: #fff;
+  font-weight: 500;
+  text-shadow: 0 0 6px #0f0;
+}
+.mode-rev {
+  background: linear-gradient(90deg, #0c2610, #143c1a);
+  color: #bdfdbd;
+  border-bottom: 2px solid #1f7a1f;
+}
+.mode-brk {
+  background: linear-gradient(90deg, #3c1010, #611818);
+  color: #ffbdbd;
+  border-bottom: 2px solid #c33;
+}
+
+/* Destaque por modo via atributo data-mode */
+.ticker-card[data-mode="REVERSAO"] {
+  border-color: #1f7a1f;
+  box-shadow: 0 0 10px rgba(0,255,0,0.25);
+}
+.ticker-card[data-mode="ROMPIMENTO"] {
+  border-color: #c33;
+  box-shadow: 0 0 10px rgba(255,0,0,0.3);
+}
+.ticker-card[data-mode="REVERSAO"] .symbol-icon {
+  border-color: rgba(0,255,0,0.5);
+  box-shadow: 0 0 12px rgba(0,255,0,0.35), 0 0 10px rgba(255,255,255,0.08) inset;
+}
+.ticker-card[data-mode="ROMPIMENTO"] .symbol-icon {
+  border-color: rgba(255,0,0,0.5);
+  box-shadow: 0 0 12px rgba(255,0,0,0.35), 0 0 10px rgba(255,255,255,0.08) inset;
+}
+.metric { color: #cbd5e1; }
+.metric strong { color: #e8edf5; }
+
+/* Rodapé */
+.app-footer {
+  padding: var(--space-3) var(--space-4);
+  color: var(--muted);
+  border-top: 1px solid var(--border);
+}
+
+/* Estados visuais comuns */
+.call { color: var(--accent-teal); }
+.put { color: #ec4899; }
+.win { color: var(--win); }
+.loss { color: var(--loss); }
+
+/* Transições leves */
+.price, .arrow, .status-badge, .card, .feed li.item {
+  transition: opacity 120ms ease, color 120ms ease, background-color 120ms ease, border-color 120ms ease;
+}
+
+/* Responsividade */
+@media (min-width: 640px) {
+  .grid.cards { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (min-width: 768px) {
+  .app-header { position: sticky; top: 0; z-index: 20; }
+  #content { padding-top: var(--space-4); }
+  /* Ticker em 2 colunas */
+  #ticker .grid.cards { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (min-width: 1024px) {
+  /* Stats em 3 colunas */
+  #stats .grid.cards { grid-template-columns: repeat(3, 1fr); }
+}
+
+@media (min-width: 1280px) {
+  /* Stats em 4 colunas */
+  #stats .grid.cards { grid-template-columns: repeat(4, 1fr); }
+}
+/* Breakout highlighting based on trend line interaction */
+.ticker-card[data-break="CALL"] {
+  border-color: #1f7a1f;
+  box-shadow: 0 0 10px rgba(31, 122, 31, 0.6);
+}
+.ticker-card[data-break="PUT"] {
+  border-color: #c33;
+  box-shadow: 0 0 10px rgba(204, 51, 51, 0.6);
+}
+.ticker-card[data-break="CALL"] .symbol-icon { color: #1f7a1f; }
+.ticker-card[data-break="PUT"] .symbol-icon { color: #c33; }
