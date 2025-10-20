@@ -41,7 +41,13 @@
           <div id="configBox" class="config-box">
             <label>💵 Entrada: <input id="valorEntradaInput" type="number" step="0.01" value="1.00"></label>
             <label>📈 Payout (%): <input id="payoutInput" type="number" step="0.01" value="0.89"></label>
+            <label>🔈 Voz <input id="voiceToggle" type="checkbox" /></label>
             <button id="btnSalvarConfig">Salvar</button>
+          </div>
+          <div id="systemToggles" class="system-toggles">
+            <label><input id="toggleVoice" type="checkbox"> 🔈 Voz (TTS)</label>
+            <label><input id="toggleSounds" type="checkbox"> 🔊 Sons</label>
+            <label><input id="toggleAbstain" type="checkbox"> 🛑 Abster-se em sequência ruim</label>
           </div>
         </section>
         <section id="ticker" class="section" aria-label="Ticker em tempo real">
@@ -59,6 +65,7 @@
                 <div>LTB: <span id="ltb-ADAUSDT">—</span> ↓</div>
               </div>
               <div id="trend-ADAUSDT" class="trend-status">—</div>
+              <div id="regime-ADAUSDT" class="regime-status">—</div>
               <div class="price" id="price-ADAUSDT">—</div>
             </article>
             <article class="card ticker-card" data-symbol="XRPUSDT">
@@ -73,6 +80,7 @@
                 <div>LTB: <span id="ltb-XRPUSDT">—</span> ↓</div>
               </div>
               <div id="trend-XRPUSDT" class="trend-status">—</div>
+              <div id="regime-XRPUSDT" class="regime-status">—</div>
               <div class="price" id="price-XRPUSDT">—</div>
             </article>
             <article class="card ticker-card" data-symbol="ETHUSDT">
@@ -87,6 +95,7 @@
                 <div>LTB: <span id="ltb-ETHUSDT">—</span> ↓</div>
               </div>
               <div id="trend-ETHUSDT" class="trend-status">—</div>
+              <div id="regime-ETHUSDT" class="regime-status">—</div>
               <div class="price" id="price-ETHUSDT">—</div>
             </article>
             <article class="card ticker-card" data-symbol="BTCUSDT">
@@ -101,6 +110,7 @@
                 <div>LTB: <span id="ltb-BTCUSDT">—</span> ↓</div>
               </div>
               <div id="trend-BTCUSDT" class="trend-status">—</div>
+              <div id="regime-BTCUSDT" class="regime-status">—</div>
               <div class="price" id="price-BTCUSDT">—</div>
             </article>
           </div>

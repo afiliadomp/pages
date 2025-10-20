@@ -223,6 +223,7 @@ p { margin: 0; }
 .trend-status.up { color: var(--green-up); }
 .trend-status.down { color: var(--red-down); }
 .trend-status.neutral { color: var(--gray-flat); }
+.regime-status { font-size: 0.85rem; margin-top: 3px; color: #9ca3af; }
 .sr { font-size: 0.85rem; color: #bbb; margin-top: 2px; }
 .metrics-inline {
   font-size: 0.8rem;

@@ -17,6 +17,7 @@
   const MAX_CLOSES = 500;
   const FEED_MAX_ITEMS = 100;
   const STORAGE_KEY = 'stoch_rsi_signals_web';
+  const WORK_WINDOW = 250;
 
   // ===== Banca e Payout =====
   let SALDO_INICIAL = 0.00;    // começa o dia sempre com 0 USDT
@@ -43,13 +44,39 @@
     pending: Object.fromEntries(SYMBOLS.map(s => [s, null])),
     entry: Object.fromEntries(SYMBOLS.map(s => [s, null])),
     stats: Object.fromEntries(SYMBOLS.map(s => [s, { total: 0, wins: 0 }])),
+
+    // Modelo adaptativo e métricas recentes por símbolo
+    model: Object.fromEntries(SYMBOLS.map(s => [s, {
+      regime: 'SIDE',
+      lastRegime: null,
+      kOver: 95,
+      kUnder: 5,
+      rsiOver: 70,
+      rsiUnder: 30,
+      nearBreak: 0.0005,
+      minAtrMult: 0.20,
+      abstainUntil: 0,
+    }])),
+    trailing: Object.fromEntries(SYMBOLS.map(s => [s, {
+      winLoss: [], // 'WIN'|'LOSS'
+      recentAtr: [],
+      recentRsiRange: [],
+    }])),
+    nextSignalAt: Object.fromEntries(SYMBOLS.map(s => [s, 0])),
+    lossesStreak: Object.fromEntries(SYMBOLS.map(s => [s, 0])),
+
     ws: null,
     reconnectAttempts: 0,
     minuteStampAnnounced: null,
     minuteStampExited: null,
     dayKey: null,
     store: {},
-  };
+     settings: { voice: true, sounds: true, abstain: true },
+   };
+
+  // Preferência de voz (TTS)
+  let voiceEnabled = false;
+  let lastSpeakTime = 0;
 
   // ===== Seletores =====
   const $ = sel => document.querySelector(sel);
@@ -236,14 +263,48 @@
       const obj = JSON.parse(raw);
       if (obj._saldoAtual !== undefined) saldoAtual = obj._saldoAtual;
       if (obj._saldoInicial !== undefined) SALDO_INICIAL = obj._saldoInicial;
+      if (obj._voiceEnabled !== undefined) voiceEnabled = !!obj._voiceEnabled;
+      if (obj._settings && typeof obj._settings === 'object') {
+        state.settings = { ...state.settings, ...obj._settings };
+        voiceEnabled = !!state.settings.voice;
+      }
+      if (obj._model && typeof obj._model === 'object') {
+        // merge superficial por símbolo
+        for (const s of SYMBOLS) {
+          if (obj._model[s]) {
+            state.model[s] = { ...state.model[s], ...obj._model[s] };
+          }
+        }
+      }
+      // parâmetros persistidos (globais) — usados apenas para operações futuras
+      if (typeof obj._valorEntrada === 'number') {
+        VALOR_ENTRADA = obj._valorEntrada;
+      }
+      if (typeof obj._payout === 'number') {
+        PAYOUT = obj._payout;
+      }
+      // tenta recuperar saldo do dia atual (se existir)
+      const todayKey = getDayKey();
+      if (obj && obj[todayKey] && obj[todayKey].saldoAtual != null) {
+        saldoAtual = obj[todayKey].saldoAtual;
+        updateSaldoUI();
+      }
       return obj && typeof obj === 'object' ? obj : {};
     } catch (_) { return {}; }
   }
 
   function saveStore() {
     try {
+      ensureDay(state.store, state.dayKey);
+      if (state.store[state.dayKey]) state.store[state.dayKey].saldoAtual = saldoAtual;
       state.store._saldoAtual = saldoAtual;
       state.store._saldoInicial = SALDO_INICIAL;
+      state.store._voiceEnabled = !!voiceEnabled;
+      state.store._settings = state.settings;
+      state.store._model = state.model;
+      // persistência dos parâmetros globais
+      state.store._valorEntrada = VALOR_ENTRADA;
+      state.store._payout = PAYOUT;
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state.store));
     } catch (_) { /* ignore */ }
   }
@@ -265,7 +326,7 @@
   function updateSaldoUI() {
     const el = document.getElementById('saldoValor');
     if (!el) return;
-    const lucro = saldoAtual - SALDO_INICIAL;
+    const lucro = saldoAtual; // SALDO_INICIAL já é sempre 0 no início do dia
     const cor = lucro >= 0 ? '#3aff7a' : '#ff4d4d';
     el.innerHTML = `Saldo: <span style="color:${cor}">${saldoAtual.toFixed(2)}</span> (${lucro >= 0 ? '+' : ''}${lucro.toFixed(2)})`;
   }
@@ -275,13 +336,44 @@
     const valInput = document.getElementById('valorEntradaInput');
     const payInput = document.getElementById('payoutInput');
     const btn = document.getElementById('btnSalvarConfig');
+    const voiceTgl = document.getElementById('voiceToggle');
     if (!valInput || !payInput || !btn) return;
 
+    // Preencher inputs com valores persistidos
+    try {
+      valInput.value = Number(VALOR_ENTRADA).toFixed(2);
+      payInput.value = Number(PAYOUT).toFixed(2);
+    } catch (_) {}
+
+    if (voiceTgl) {
+      const v = (state?.settings?.voice ?? voiceEnabled);
+      voiceTgl.checked = !!v;
+      voiceEnabled = !!v;
+      voiceTgl.addEventListener('change', () => {
+        const on = !!voiceTgl.checked;
+        state.settings.voice = on;
+        voiceEnabled = on;
+        saveStore();
+        if (on) speak('Voz ativada');
+      });
+    }
+
     btn.addEventListener('click', () => {
-      VALOR_ENTRADA = parseFloat(valInput.value) || VALOR_ENTRADA;
-      PAYOUT = parseFloat(payInput.value) || PAYOUT;
-      updateSaldoUI();
-      alert(`Configurações atualizadas!\nEntrada: ${VALOR_ENTRADA.toFixed(2)} USDT\nPayout: ${(PAYOUT * 100).toFixed(1)}%`);
+      const val = parseFloat(valInput.value);
+      if (!Number.isNaN(val)) {
+        VALOR_ENTRADA = val;
+      }
+
+      let payoutVal = (payInput.value || '').toString().replace(',', '.');
+      let parsed = parseFloat(payoutVal);
+      if (!Number.isNaN(parsed)) {
+        if (parsed > 1) parsed = parsed / 100; // permite 89 -> 0.89
+        PAYOUT = parsed;
+      }
+
+      // Persistir apenas parâmetros para operações futuras
+      saveStore();
+      alert(`Configurações atualizadas!\nEntrada: ${VALOR_ENTRADA.toFixed(2)} USDT\nPayout: ${(PAYOUT * 100).toFixed(1)}%${voiceTgl ? `\nVoz: ${voiceTgl.checked ? 'ON' : 'OFF'}` : ''}`);
     });
   }
 
@@ -290,7 +382,7 @@
     const rec = { time: nowHMS(), symbol, side, price, metrics: formatMetrics(symbol) };
     state.store[state.dayKey].signals.unshift(rec);
     // manter tamanho razoável
-    if (state.store[state.dayKey].signals.length > 1000) state.store[state.dayKey].signals.length = 1000;
+    if (state.store[state.dayKey].signals.length > 500) state.store[state.dayKey].signals.length = 500;
     saveStore();
   }
 
@@ -299,6 +391,8 @@
     const day = state.store[state.dayKey];
     const rec = { time: nowHMS(), symbol, side, result, entryPrice, exitPrice, metrics: formatMetrics(symbol) };
     day.results.unshift(rec);
+    // Cap no histórico de resultados persistido
+    if (day.results.length > 500) day.results.length = 500;
     // Estatísticas diárias (incremental)
     day.stats.total = (day.stats.total || 0) + 1;
     day.stats.wins = (day.stats.wins || 0) + (result === 'WIN' ? 1 : 0);
@@ -306,6 +400,24 @@
     day.stats.winrate = day.stats.total > 0 ? parseFloat(((day.stats.wins / day.stats.total) * 100).toFixed(1)) : 0;
     saveStore();
     updateDailySummaryUI();
+  }
+
+  function recalcSaldoFromResults() {
+    try {
+      ensureDay(state.store, state.dayKey);
+      const day = state.store[state.dayKey];
+      if (!day || !Array.isArray(day.results)) return;
+      let saldo = 0;
+      for (const r of day.results) {
+        if (r.result === 'WIN') saldo += VALOR_ENTRADA * PAYOUT;
+        else if (r.result === 'LOSS') saldo -= VALOR_ENTRADA;
+      }
+      saldoAtual = saldo;
+      try { day.saldoAtual = saldoAtual; } catch (_) {}
+      updateSaldoUI();
+      try { saveStore(); } catch (_) {}
+      console.log('[RECALC] Saldo restaurado:', saldoAtual.toFixed(2), 'USDT');
+    } catch (_) { /* silencioso */ }
   }
 
   function loadDayToUI() {
@@ -363,15 +475,25 @@
     // atualiza os cards de stats na UI
     for (const s of SYMBOLS) updateStats(s);
     updateDailySummaryUI();
+    const dayAfter = state.store[state.dayKey];
+    if (dayAfter && typeof dayAfter.saldoAtual === 'number') {
+      saldoAtual = dayAfter.saldoAtual;
+      updateSaldoUI();
+    } else {
+      recalcSaldoFromResults();
+    }
   }
 
   function newDaySession() {
     state.dayKey = getDayKey();
     ensureDay(state.store, state.dayKey);
 
-    // Reset banca para novo dia
-    SALDO_INICIAL = 0.00;
-    saldoAtual = 0.00;
+    const day = state.store[state.dayKey];
+    if (day && typeof day.saldoAtual === 'number') {
+      saldoAtual = day.saldoAtual;
+    } else {
+      recalcSaldoFromResults();
+    }
     updateSaldoUI();
 
     saveStore();
@@ -392,6 +514,96 @@
     } catch (_) {
       // silencioso
     }
+  }
+
+  // ===== Voz (TTS) e Sons =====
+  function speak(text, optsOrPitch, rateArg, langArg) {
+    const voiceOn = (state?.settings?.voice ?? voiceEnabled);
+    if (!voiceOn) return;
+    try {
+      const ss = window.speechSynthesis;
+      if (!ss || typeof SpeechSynthesisUtterance === 'undefined') return;
+
+      const now = Date.now();
+      if (now - lastSpeakTime < 2000) return; // evita sobreposição (2s)
+      lastSpeakTime = now;
+
+      // Cancela falas anteriores para evitar sobreposição
+      try { ss.cancel(); } catch (_) {}
+
+      // Parametrização com defaults mais naturais
+      let pitch = 1.05, rate = 0.95, lang = 'pt-BR';
+      if (optsOrPitch && typeof optsOrPitch === 'object') {
+        if (Number.isFinite(optsOrPitch.pitch)) pitch = optsOrPitch.pitch;
+        if (Number.isFinite(optsOrPitch.rate)) rate = optsOrPitch.rate;
+        if (optsOrPitch.lang) lang = optsOrPitch.lang;
+      } else {
+        if (Number.isFinite(optsOrPitch)) pitch = optsOrPitch;
+        if (Number.isFinite(rateArg)) rate = rateArg;
+        if (typeof langArg === 'string' && langArg) lang = langArg;
+      }
+
+      const utter = new SpeechSynthesisUtterance(String(text));
+      utter.lang = lang;
+      utter.pitch = pitch;
+      utter.rate = rate;
+      utter.volume = 1.0;
+
+      // Seleciona voz feminina brasileira, se disponível
+      const voices = ss.getVoices?.() || [];
+      const preferredName = localStorage.getItem('ttsVoice');
+      let selected = null;
+      if (preferredName) {
+        selected = voices.find(v => v.name === preferredName) || null;
+      }
+      if (!selected && voices.length) {
+        selected =
+          voices.find(v => /^pt/i.test(v.lang) && /female|mulher|feminina|woman/i.test(v.name)) ||
+          voices.find(v => v.lang === 'pt-BR' && /brasil|brazil|let[ií]cia|luciana|female|mulher/i.test(v.name)) ||
+          voices.find(v => v.lang === 'pt-BR') ||
+          voices[0];
+      }
+      if (selected) utter.voice = selected;
+
+      ss.speak(utter);
+      console.log(`[TTS] Falando: "${text}" com voz: ${utter.voice?.name || 'padrão'} (pitch=${utter.pitch}, rate=${utter.rate})`);
+    } catch (err) {
+      console.warn('Erro no TTS:', err);
+    }
+  }
+
+  // Memoriza voz feminina preferida quando as vozes do TTS carregarem
+  try {
+    const ss = window.speechSynthesis;
+    if (ss && typeof ss.onvoiceschanged !== 'undefined') {
+      ss.onvoiceschanged = () => {
+        try {
+          const voices = ss.getVoices();
+          const chosen =
+            voices.find(v => /luciana/i.test(v.name)) ||
+            voices.find(v => /let[ií]cia/i.test(v.name)) ||
+            voices.find(v => v.lang === 'pt-BR');
+          if (chosen) localStorage.setItem('ttsVoice', chosen.name);
+        } catch (_) { /* silencioso */ }
+      };
+    }
+  } catch (_) { /* silencioso */ }
+
+  function soundSignal(side) {
+    if (state?.settings && state.settings.sounds === false) return;
+    if (side === 'CALL') beep(900, 160); else beep(600, 160);
+  }
+  function soundWin() {
+    if (state?.settings && state.settings.sounds === false) return;
+    beep(900, 110); setTimeout(() => beep(1100, 110), 130);
+  }
+  function soundLoss() {
+    if (state?.settings && state.settings.sounds === false) return;
+    beep(600, 110); setTimeout(() => beep(450, 110), 130);
+  }
+  function soundReconnect() {
+    if (state?.settings && state.settings.sounds === false) return;
+    beep(850, 100);
   }
 
   // ===== Indicadores =====
@@ -585,6 +797,9 @@
       ws.onopen = () => {
         state.reconnectAttempts = 0;
         setStatus('Conectado', 'ok');
+        try { soundReconnect(); } catch (_) {}
+        try { logLearn('ALL', 'WebSocket conectado'); } catch (_) {}
+        try { speak('Conectado'); } catch (_) {}
       };
       ws.onmessage = (ev) => {
         try {
@@ -639,15 +854,115 @@
   }
 
   // ===== Lógica de Sinais =====
-  function announceSignals() {
+  function detectMarketRegime(symbol) { 
+    const closes = state.closes[symbol]; 
+    if (!closes || closes.length < 100) return "UNKNOWN"; 
+
+    const ema50 = ema(closes, 50); 
+    const ema200 = ema(closes, 200); 
+    const atrVal = atr(closes, ATR_PERIOD); 
+    const rsiVals = rsi(closes, RSI_PERIOD); 
+    const lastRSI = rsiVals.at(-1); 
+    const recentRSI = rsiVals.slice(-10); 
+
+    const emaDiff = Math.abs(ema50 - ema200) / ema200; 
+    const rsiRange = Math.max(...recentRSI) - Math.min(...recentRSI); 
+
+    if (atrVal < 0.0002) return "FLAT"; // mercado travado 
+    if (emaDiff > 0.001 && rsiRange > 25) return "TREND"; // tendência forte 
+    if (emaDiff < 0.0005 && rsiRange < 20) return "SIDE";  // lateral 
+    return "VOLATILE"; // regime misto 
+  } 
+
+  // ===== Logs coloridos =====
+  function logSignal(symbol, side, mode, price, rsi, k, d, extra = '') {
+    const sideColor = side === 'CALL' ? '#22c55e' : '#ef4444';
+    console.log(
+      '%c[SIGNAL]%c %s %c%s%c @ %s (mode:%s) RSI:%s K:%s D:%s%s',
+      'color:#f59e0b;font-weight:bold',
+      'color:#9ca3af',
+      symbol,
+      `color:${sideColor};font-weight:bold`, side,
+      'color:#9ca3af',
+      String(price),
+      mode || '-',
+      Number(rsi).toFixed(1),
+      Number(k).toFixed(1),
+      Number(d).toFixed(1),
+      extra ? ` | ${extra}` : ''
+    );
+  }
+  function logResult(symbol, result, side, entry, exit, atr, move, minMove) {
+    const ok = result === 'WIN';
+    const resColor = ok ? '#22c55e' : '#ef4444';
+    console.log(
+      '%c[RESULT]%c %s %c%s%c (%s) %s→%s | move:%s | minMove:%s | atr:%s',
+      'color:#22c55e',
+      'color:#9ca3af',
+      symbol,
+      `color:${resColor};font-weight:bold`, result,
+      'color:#9ca3af',
+      side,
+      Number(entry).toFixed(4),
+      Number(exit).toFixed(4),
+      Number(move).toFixed(6),
+      Number(minMove).toFixed(6),
+      Number(atr || 0).toFixed(6)
+    );
+  }
+  function logLearn(symbol, msg) {
+    console.log('%c[LEARN]%c %s — %s', 'color:#38bdf8', 'color:#9ca3af', symbol, msg);
+  }
+
+  // ===== Aprendizado contextual — thresholds dinâmicos =====
+  function adaptiveThreshold(symbol) {
+    const day = state.store[state.dayKey];
+    if (!day || !Array.isArray(day.results)) return { rsiBuy: 35, rsiSell: 65 };
+    const recent = day.results.filter(r => r.symbol === symbol).slice(0, 30);
+    const wr = recent.length ? recent.filter(r => r.result === 'WIN').length / recent.length : 0;
+    const adj = wr < 0.6 ? 5 : (wr > 0.8 ? -5 : 0);
+    return { rsiBuy: 35 + adj, rsiSell: 65 - adj };
+  }
+
+  function clamp(x, a, b) { return Math.max(a, Math.min(b, x)); }
+
+function scoreSignal(symbol, ctx) {
+  const { sd, rsiNow, ema50, ema200, regime, nearLTB, nearLTA, atr } = ctx || {};
+  if (!sd || rsiNow == null) return { score: 0 };
+  let score = 0;
+  // Acordo K/D (quanto mais próximos, melhor)
+  const kdAgreement = 1 - Math.min(1, Math.abs(Number(sd.K) - Number(sd.D)) / 100);
+  score += kdAgreement * 0.30;
+  // RSI em extremos (longe de 50)
+  const rsiExtreme = Math.min(1, Math.abs(Number(rsiNow) - 50) / 50);
+  score += rsiExtreme * 0.20;
+  // Alinhamento com EMAs
+  const trendUp = ema50 && ema200 && ema50 > ema200;
+  const trendDown = ema50 && ema200 && ema50 < ema200;
+  const trendScore = trendUp || trendDown ? 1 : 0.5;
+  score += trendScore * 0.10;
+  // Proximidade de estruturas
+  const nearScore = (nearLTB || nearLTA) ? 1 : 0;
+  score += nearScore * 0.20;
+  // Volatilidade suficiente (ATR)
+  const atrScore = atr != null ? clamp((atr - 0.0001) / 0.0005, 0, 1) : 0.5;
+  score += atrScore * 0.20;
+  return { score: clamp(score, 0, 1), regime };
+}
+
+function announceSignals() {
     const workingTime = Date.now();
     for (const symbol of SYMBOLS) {
       if (state.entry[symbol] || state.pending[symbol]) continue;
+      const nowTs = Date.now();
+      if ((state?.settings?.abstain !== false) && state.model[symbol]?.abstainUntil && nowTs < state.model[symbol].abstainUntil) continue;
+      if (state.nextSignalAt[symbol] && nowTs < state.nextSignalAt[symbol]) continue;
       const lastIdx = state.closes[symbol]?.length || 0;
       if (state.cooldownUntil[symbol] > lastIdx) continue;
       const closes = state.closes[symbol];
       if (!closes || closes.length < (RSI_PERIOD + STOCH_PERIOD)) continue;
-      const working = closes.slice();
+      const working = closes.slice(-WORK_WINDOW);
+      if (!working.length) continue;
       const lp = state.lastPrice[symbol];
       if (!Number.isFinite(lp)) continue;
       working.push(lp);
@@ -661,28 +976,68 @@
       const trendDown = ema50 && ema200 && ema50 < ema200;
       const tr = state.trends[symbol] || {};
       if (!Number.isFinite(tr.ltb) && !Number.isFinite(tr.lta)) continue;
-      let side = null;
-      const mode = state.modes?.[symbol] || MODE;
-      if (mode === 'ROMPIMENTO') {
-        const lastClose = closes.at(-1);
-        if (Number.isFinite(tr.ltb) && lp > tr.ltb && lastClose > tr.ltb) side = 'CALL';
-        else if (Number.isFinite(tr.lta) && lp < tr.lta && lastClose < tr.lta) side = 'PUT';
-        else continue;
-      } else {
-        if (Number.isFinite(tr.ltb) && Number.isFinite(tr.lta)) {
-          const nearLTB = Math.abs(lp - tr.ltb) / tr.ltb < 0.0005;
-          const nearLTA = Math.abs(lp - tr.lta) / tr.lta < 0.0005;
 
-          if (nearLTB && sd.K >= 95 && sd.D >= 95 && rsiNow >= 70) side = 'PUT';
-          else if (nearLTA && sd.K <= 5 && sd.D <= 5 && rsiNow <= 30) side = 'CALL';
-          else continue;
-        } else {
-          continue;
+      const regime = detectMarketRegime(symbol);
+      // contexto para scoring
+      const atrVal = atr(state.closes[symbol], ATR_PERIOD);
+      const nearLTB = Number.isFinite(tr.ltb) ? Math.abs(lp - tr.ltb) / tr.ltb < 0.0012 : false;
+      const nearLTA = Number.isFinite(tr.lta) ? Math.abs(lp - tr.lta) / tr.lta < 0.0012 : false;
+      const ctx = { ema50, ema200, trends: tr, sd, rsiNow, atr: atrVal, regime, nearLTB, nearLTA };
+      const scoreObj = scoreSignal(symbol, ctx) || { score: 0 };
+      const score = Math.max(0, Math.min(1, Number(scoreObj.score) || 0));
+
+      // Respeitar configurações de abstenção e score mínimo
+      if (state.settings?.abstain && (state.model[symbol]?.abstainUntil && Date.now() < state.model[symbol].abstainUntil)) continue;
+      if (state.settings?.abstain && score < 0.6) continue;
+
+      const regimeEl = document.getElementById(`regime-${symbol}`);
+      if (regimeEl) {
+        regimeEl.textContent =
+          regime === "SIDE" ? "📊 Lateral"
+          : regime === "TREND" ? "📈 Tendencial"
+          : regime === "VOLATILE" ? "⚡ Volátil"
+          : regime === "FLAT" ? "🕳️ Travado"
+          : "—";
+      }
+
+      // Filtro de volatilidade: evita operar mercado travado
+      if (atrVal != null && atrVal < 0.00015) continue;
+
+      let side = null;
+
+      if (regime === "SIDE") {
+        // Mercado lateral → reversão com sensibilidade adaptativa
+        const nearLTB = Math.abs(lp - tr.ltb) / tr.ltb < 0.0012;
+        const nearLTA = Math.abs(lp - tr.lta) / tr.lta < 0.0012;
+        const { rsiBuy, rsiSell } = adaptiveThreshold(symbol);
+        if (nearLTB && sd.K >= 90 && sd.D >= 90 && rsiNow >= rsiSell) side = 'PUT';
+        else if (nearLTA && sd.K <= 10 && sd.D <= 10 && rsiNow <= rsiBuy) side = 'CALL';
+      }
+      else if (regime === "TREND") {
+        // Mercado tendencial → operar rompimento
+        if (lp > tr.ltb) side = 'CALL';
+        else if (lp < tr.lta) side = 'PUT';
+      }
+      else if (regime === "VOLATILE") {
+        // Mercado volátil → confirmação dupla
+        if ((sd.K >= 95 && sd.D >= 95 && rsiNow >= 70 && lp < tr.ltb) ||
+            (sd.K <= 5 && sd.D <= 5 && rsiNow <= 30 && lp > tr.lta)) {
+          side = sd.K >= 95 ? 'PUT' : 'CALL';
         }
       }
+      else if (regime === "FLAT") {
+        // Mercado travado → não operar
+        continue;
+      }
+
       const lastClose = closes.at(-1);
       const prevClose = closes.at(-2) ?? lastClose;
       updateBreakHighlight(symbol);
+
+      // Se nenhuma condição selecionou um lado, não operar
+      if (!side) continue;
+
+      // Score mínimo validado por scoreSignal() já aplicado acima
 
       // Filtro macro: operar apenas a favor da tendência EMA50/EMA200
       if (side === 'CALL' && trendDown) continue;
@@ -697,10 +1052,13 @@
       }
 
       state.pending[symbol] = { side, price: lp, ts: workingTime };
-      beep(1000, 220);
+      state.nextSignalAt[symbol] = Date.now() + 120000; // rate limit 2min por símbolo
+      try { soundSignal(side); } catch (_) {}
       prependSignalItem(symbol, side, lp);
       addSignalToStore(symbol, side, lp);
-      console.log(`[SIGNAL] ${symbol} ${side} @ ${lp} (${mode}) RSI:${rsiNow.toFixed(1)} K:${sd.K.toFixed(1)} D:${sd.D.toFixed(1)} | EMA50:${ema50?.toFixed(4)} EMA200:${ema200?.toFixed(4)}`);
+      const th = adaptiveThreshold(symbol);
+      try { logSignal(symbol, side, regime, lp, rsiNow, sd.K, sd.D, `score:${score.toFixed(2)} | regime:${regime} | rsiBuy:${th.rsiBuy} rsiSell:${th.rsiSell} | kOver:${state.model[symbol]?.kOver ?? 90} kUnder:${state.model[symbol]?.kUnder ?? 10} | minATR:${(state.model[symbol]?.minAtrMult ?? 0.2).toFixed(2)}`); } catch (_) {}
+      try { speak(`${symbol} ${side === 'CALL' ? 'compra' : 'venda'} score ${(score*100).toFixed(0)} por cento.`); } catch (_) {}
     }
   }
 
@@ -772,7 +1130,7 @@
 
       let result = 'LOSS';
       const atrVal = atr(state.closes[symbol], ATR_PERIOD) || 0;
-      const minMove = atrVal * 0.2; // exige movimento real de 20% do ATR
+      const minMove = atrVal * (state.model[symbol]?.minAtrMult ?? 0.2); // exige movimento real proporcional ao ATR
       const diff = exitPrice - entryPrice;
 
       if (side === 'CALL' && diff > minMove) result = 'WIN';
@@ -780,13 +1138,17 @@
       else result = 'LOSS';
 
       // ===== Atualiza Saldo =====
+      let delta = 0;
       if (result === 'WIN') {
-        const ganho = VALOR_ENTRADA * PAYOUT;
-        saldoAtual += ganho;
+        delta = VALOR_ENTRADA * PAYOUT;
+        saldoAtual += delta;
       } else {
-        saldoAtual -= VALOR_ENTRADA;
+        delta = -VALOR_ENTRADA;
+        saldoAtual += delta;
       }
       updateSaldoUI();
+      saveStore();
+      console.log(`[BAL] ${symbol} ${result} delta:${delta.toFixed(2)} saldo:${saldoAtual.toFixed(2)}`);
 
       // Estatísticas por símbolo
       state.stats[symbol].total += 1;
@@ -794,18 +1156,112 @@
       updateStats(symbol);
 
       // UI e persistência
-      beep(result === 'WIN' ? 800 : 400, 400);
+      try { result === 'WIN' ? soundWin() : soundLoss(); } catch (_) {}
+      try { speak(`${symbol} ${result === 'WIN' ? 'vitória' : 'derrota'}`); } catch (_) {}
       prependResultItem(symbol, result, side, entryPrice, exitPrice);
       addResultToStore(symbol, result, side, entryPrice, exitPrice);
       console.log(`[RESULT] ${symbol} ${result} (${side}) ${entryPrice} → ${exitPrice}`);
+
+      // aprendizado dinâmico baseado nos últimos resultados
+      learn(symbol);
+
+      // Atualiza histórico deslizante e streak
+      try {
+        const wl = state.trailing[symbol].winLoss;
+        wl.unshift(result);
+        if (wl.length > 30) wl.pop();
+        if (result === 'WIN') {
+          state.lossesStreak[symbol] = 0;
+        } else {
+          state.lossesStreak[symbol] = (state.lossesStreak[symbol] || 0) + 1;
+          if (state.lossesStreak[symbol] === 2) {
+            state.model[symbol].abstainUntil = Date.now() + 60000; // 1min
+            logLearn(symbol, 'abstenção por 60s após 2 perdas consecutivas');
+          }
+          if (state.lossesStreak[symbol] >= 3) {
+            state.model[symbol].abstainUntil = Date.now() + 300000; // 5min
+            const prevMode = state.modes[symbol];
+            state.modes[symbol] = prevMode === 'REVERSAO' ? 'ROMPIMENTO' : 'REVERSAO';
+            updateSymbolModeUI(symbol, state.modes[symbol]);
+            logLearn(symbol, 'cooldown 5min por 3 perdas consecutivas + troca de regime');
+          }
+        }
+      } catch (_) {}
+
       // cooldown por barras após finalizar
       const idx = state.closes[symbol]?.length || 0;
       state.cooldownUntil[symbol] = idx + COOLDOWN_BARS;
       state.pending[symbol] = null;
       if (result === 'LOSS') state.modes[symbol] = 'REVERSAO';
+      state.nextSignalAt[symbol] = Date.now() + 120000; // resguardo extra pós-resultado (rate limit 2min)
       
       state.entry[symbol] = null;
     }
+  }
+
+  function learn(symbol) {
+    const day = state.store[state.dayKey];
+    if (!day || !day.results) return;
+    const all = day.results.filter(r => r.symbol === symbol);
+    const last20 = all.slice(0, 20);
+    const last100 = all.slice(0, 100);
+    const wins20 = last20.filter(r => r.result === 'WIN').length;
+    const wins100 = last100.filter(r => r.result === 'WIN').length;
+    const wr20 = last20.length ? wins20 / last20.length : 0;
+    const wr100 = last100.length ? wins100 / last100.length : 0;
+
+    const m = state.model[symbol] || (state.model[symbol] = {});
+    m.minAtrMult = m.minAtrMult ?? 0.20;
+    m.kOver = m.kOver ?? 95;
+    m.kUnder = m.kUnder ?? 5;
+    m.rsiOver = m.rsiOver ?? 70;
+    m.rsiUnder = m.rsiUnder ?? 30;
+
+    let deltaMin = 0;
+    if (wr20 < 0.50) deltaMin += 0.05; else if (wr20 > 0.70) deltaMin -= 0.02;
+    if (wr100 < 0.50) deltaMin += 0.02; else if (wr100 > 0.70) deltaMin -= 0.01;
+    m.minAtrMult = clamp(m.minAtrMult + deltaMin, 0.12, 0.50);
+
+    if (wr20 < 0.50) {
+      m.kOver = clamp((m.kOver ?? 95) + 1, 90, 99);
+      m.kUnder = clamp((m.kUnder ?? 5) - 1, 1, 10);
+      m.rsiOver = clamp((m.rsiOver ?? 70) + 1, 55, 80);
+      m.rsiUnder = clamp((m.rsiUnder ?? 30) - 1, 20, 45);
+    } else if (wr20 > 0.70) {
+      m.kOver = clamp((m.kOver ?? 95) - 1, 90, 99);
+      m.kUnder = clamp((m.kUnder ?? 5) + 1, 1, 10);
+      m.rsiOver = clamp((m.rsiOver ?? 70) - 1, 55, 80);
+      m.rsiUnder = clamp((m.rsiUnder ?? 30) + 1, 20, 45);
+    }
+
+    const last10 = all.slice(0, 10);
+    const wr10 = last10.length ? last10.filter(r => r.result === 'WIN').length / last10.length : 1;
+    if (wr10 < 0.50) {
+      state.model[symbol].abstainUntil = Date.now() + 180000; // 3min
+      const prevMode = state.modes[symbol];
+      state.modes[symbol] = prevMode === 'REVERSAO' ? 'ROMPIMENTO' : 'REVERSAO';
+      updateSymbolModeUI(symbol, state.modes[symbol]);
+    }
+
+    logLearn(symbol, `wr20:${(wr20*100).toFixed(1)}% wr100:${(wr100*100).toFixed(1)}% minAtrMult:${m.minAtrMult.toFixed(2)} kO:${m.kOver} kU:${m.kUnder} rsiO:${m.rsiOver} rsiU:${m.rsiUnder}${(last10.length && (last10.filter(r=>r.result==='WIN').length/last10.length)<0.5)?' | abstain 3m + modo:'+state.modes[symbol]:''}`);
+    saveStore();
+  }
+
+  function adjustLearning(symbol) { 
+    const day = state.store[state.dayKey]; 
+    if (!day || !day.results) return; 
+
+    const recent = day.results.filter(r => r.symbol === symbol).slice(0, 20); 
+    if (recent.length < 10) return; 
+
+    const wins = recent.filter(r => r.result === 'WIN').length; 
+    const wr = (wins / recent.length) * 100; 
+
+    if (wr < 60) { 
+      state.modes[symbol] = state.modes[symbol] === 'REVERSAO' ? 'ROMPIMENTO' : 'REVERSAO'; 
+      console.log(`[LEARN] ${symbol} winrate baixo (${wr.toFixed(1)}%), trocando modo para ${state.modes[symbol]}`); 
+      updateSymbolModeUI(symbol, state.modes[symbol]);
+    } 
   }
 
   // ===== Temporização =====
@@ -849,6 +1305,61 @@
     }, 1000);
   }
 
+  function initSystemToggles() {
+    try {
+      const elVoice = document.getElementById('toggleVoice');
+      const elSounds = document.getElementById('toggleSounds');
+      const elAbstain = document.getElementById('toggleAbstain');
+
+      if (elVoice) {
+        const v = !!(state?.settings?.voice ?? voiceEnabled);
+        elVoice.checked = v;
+        voiceEnabled = v;
+        elVoice.addEventListener('change', () => {
+          const on = !!elVoice.checked;
+          state.settings.voice = on;
+          voiceEnabled = on;
+          saveStore();
+          if (on) speak('Voz ativada');
+        });
+      }
+
+      if (elSounds) {
+        const sOn = state?.settings?.sounds !== false;
+        elSounds.checked = sOn;
+        elSounds.addEventListener('change', () => {
+          state.settings.sounds = !!elSounds.checked;
+          saveStore();
+          if (elSounds.checked) { try { soundReconnect(); } catch (_) {} }
+        });
+      }
+
+      if (elAbstain) {
+        const aOn = state?.settings?.abstain !== false;
+        elAbstain.checked = aOn;
+        elAbstain.addEventListener('change', () => {
+          state.settings.abstain = !!elAbstain.checked;
+          saveStore();
+        });
+      }
+
+      // Sincroniza toggle legado na caixa de config, se existir
+      const legacy = document.getElementById('voiceToggle');
+      if (legacy) {
+        const v = !!(state?.settings?.voice ?? voiceEnabled);
+        legacy.checked = v;
+        legacy.addEventListener('change', () => {
+          const on = !!legacy.checked;
+          state.settings.voice = on;
+          voiceEnabled = on;
+          saveStore();
+          if (on) speak('Voz ativada');
+          if (elVoice) elVoice.checked = on;
+        });
+      }
+    } catch (_) { /* silencioso */ }
+  }
+
   // ===== Inicialização =====
   async function init() {
     setStatus('Carregando...', 'warn');
@@ -872,16 +1383,23 @@
     if (btnReset) {
       btnReset.addEventListener('click', () => {
         ensureDay(state.store, state.dayKey);
-        state.store[state.dayKey] = { signals: [], results: [], stats: { total: 0, wins: 0, losses: 0, winrate: 0 } };
+        state.store[state.dayKey] = { signals: [], results: [], stats: { total: 0, wins: 0, losses: 0, winrate: 0 }, saldoAtual: 0 };
         
-        // ===== Resetar Banca =====
+        // ===== Resetar Banca e Parâmetros =====
         saldoAtual = 0.00;
         SALDO_INICIAL = 0.00;
+        VALOR_ENTRADA = 1.00;
+        PAYOUT = 0.89;
+        // refletir na UI
+        const valInput = document.getElementById('valorEntradaInput');
+        const payInput = document.getElementById('payoutInput');
+        if (valInput) valInput.value = VALOR_ENTRADA.toFixed(2);
+        if (payInput) payInput.value = PAYOUT.toFixed(2);
         updateSaldoUI();
         
         saveStore();
         loadDayToUI();
-        alert('✅ Dados e banca resetados para o novo dia!');
+        alert('✅ Dados, banca e parâmetros resetados para o padrão inicial!');
       });
     }
 
@@ -899,6 +1417,7 @@
 
     // Inicialização do painel de configuração e saldo
     initConfigBox();
+    initSystemToggles();
     updateSaldoUI();
   }
 
