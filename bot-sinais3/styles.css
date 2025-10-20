@@ -179,6 +179,10 @@ p { margin: 0; }
   color: #bbb;
   margin-top: 2px;
 }
+.trend-status { font-size: 0.85rem; margin-top: 2px; }
+.trend-status.up { color: var(--green-up); }
+.trend-status.down { color: var(--red-down); }
+.trend-status.neutral { color: var(--gray-flat); }
 .sr { font-size: 0.85rem; color: #bbb; margin-top: 2px; }
 .metrics-inline {
   font-size: 0.8rem;

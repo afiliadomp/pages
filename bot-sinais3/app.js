@@ -417,6 +417,16 @@
     return avg;
   }
 
+  function ema(series, length) {
+    if (!series || series.length < length) return null;
+    const k = 2 / (length + 1);
+    let emaVal = series[0];
+    for (let i = 1; i < series.length; i++) {
+      emaVal = series[i] * k + emaVal * (1 - k);
+    }
+    return emaVal;
+  }
+
   // ===== Tendências (LTB/LTA) =====
   function computeTrendLines(symbol) {
     const highs = state.highs[symbol];
@@ -604,6 +614,10 @@
       const rsiS = rsi(working, RSI_PERIOD);
       if (!sd || !rsiS) continue;
       const rsiNow = rsiS.at(-1);
+      const ema50 = ema(working, 50);
+      const ema200 = ema(working, 200);
+      const trendUp = ema50 && ema200 && ema50 > ema200;
+      const trendDown = ema50 && ema200 && ema50 < ema200;
       const tr = state.trends[symbol] || {};
       if (!Number.isFinite(tr.ltb) && !Number.isFinite(tr.lta)) continue;
       let side = null;
@@ -615,11 +629,11 @@
         else continue;
       } else {
         if (Number.isFinite(tr.ltb) && Number.isFinite(tr.lta)) {
-          const nearLTB = Math.abs(lp - tr.ltb) / tr.ltb < 0.001;
-          const nearLTA = Math.abs(lp - tr.lta) / tr.lta < 0.001;
+          const nearLTB = Math.abs(lp - tr.ltb) / tr.ltb < 0.0005;
+          const nearLTA = Math.abs(lp - tr.lta) / tr.lta < 0.0005;
 
-          if (nearLTB && sd.K >= 98 && sd.D >= 98 && rsiNow >= 70) side = 'PUT';
-          else if (nearLTA && sd.K <= 2 && sd.D <= 2 && rsiNow <= 30) side = 'CALL';
+          if (nearLTB && sd.K >= 95 && sd.D >= 95 && rsiNow >= 70) side = 'PUT';
+          else if (nearLTA && sd.K <= 5 && sd.D <= 5 && rsiNow <= 30) side = 'CALL';
           else continue;
         } else {
           continue;
@@ -628,11 +642,24 @@
       const lastClose = closes.at(-1);
       const prevClose = closes.at(-2) ?? lastClose;
       updateBreakHighlight(symbol);
+
+      // Filtro macro: operar apenas a favor da tendência EMA50/EMA200
+      if (side === 'CALL' && trendDown) continue;
+      if (side === 'PUT' && trendUp) continue;
+
+      // Resumo visual de tendência
+      const trendEl = document.getElementById(`trend-${symbol}`);
+      if (trendEl) {
+        trendEl.textContent = trendUp ? "📈 Tendência de Alta" : trendDown ? "📉 Tendência de Baixa" : "—";
+        trendEl.classList.remove('up','down','neutral');
+        trendEl.classList.add(trendUp ? 'up' : trendDown ? 'down' : 'neutral');
+      }
+
       state.pending[symbol] = { side, price: lp, ts: workingTime };
       beep(1000, 220);
       prependSignalItem(symbol, side, lp);
       addSignalToStore(symbol, side, lp);
-      console.log(`[SIGNAL] ${symbol} ${side} @ ${lp} (${mode}) RSI:${rsiNow.toFixed(1)} K:${sd.K.toFixed(1)} D:${sd.D.toFixed(1)}`);
+      console.log(`[SIGNAL] ${symbol} ${side} @ ${lp} (${mode}) RSI:${rsiNow.toFixed(1)} K:${sd.K.toFixed(1)} D:${sd.D.toFixed(1)} | EMA50:${ema50?.toFixed(4)} EMA200:${ema200?.toFixed(4)}`);
     }
   }
 
