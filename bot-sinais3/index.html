@@ -35,6 +35,14 @@
           <div id="summary" class="summary">
             📊 Total: <span id="sum-total">0</span> | Wins: <span id="sum-wins">0</span> | Losses: <span id="sum-losses">0</span> | Winrate: <span id="sum-winrate">0%</span>
           </div>
+          <div id="balanceBox" class="balance-box">
+            💰 <strong id="saldoValor">Saldo: —</strong> USDT
+          </div>
+          <div id="configBox" class="config-box">
+            <label>💵 Entrada: <input id="valorEntradaInput" type="number" step="0.01" value="1.00"></label>
+            <label>📈 Payout (%): <input id="payoutInput" type="number" step="0.01" value="0.89"></label>
+            <button id="btnSalvarConfig">Salvar</button>
+          </div>
         </section>
         <section id="ticker" class="section" aria-label="Ticker em tempo real">
           <h2 class="section-title">Ticker</h2>

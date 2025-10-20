@@ -18,6 +18,12 @@
   const FEED_MAX_ITEMS = 100;
   const STORAGE_KEY = 'stoch_rsi_signals_web';
 
+  // ===== Banca e Payout =====
+  let SALDO_INICIAL = 0.00;    // começa o dia sempre com 0 USDT
+  let VALOR_ENTRADA = 1.00;    // valor por operação
+  let PAYOUT = 0.89;           // payout padrão (ex: 0.89 = 89%)
+  let saldoAtual = SALDO_INICIAL;
+
   // ===== Lookback e temporização =====
   const SR_LOOKBACK = 300; // usado para preload de candles (compatibilidade)
   const COOLDOWN_BARS = 1;
@@ -228,12 +234,16 @@
       const raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) return {};
       const obj = JSON.parse(raw);
+      if (obj._saldoAtual !== undefined) saldoAtual = obj._saldoAtual;
+      if (obj._saldoInicial !== undefined) SALDO_INICIAL = obj._saldoInicial;
       return obj && typeof obj === 'object' ? obj : {};
     } catch (_) { return {}; }
   }
 
   function saveStore() {
     try {
+      state.store._saldoAtual = saldoAtual;
+      state.store._saldoInicial = SALDO_INICIAL;
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state.store));
     } catch (_) { /* ignore */ }
   }
@@ -249,6 +259,30 @@
     if (sumWinsEl) sumWinsEl.textContent = String(wins);
     if (sumLossesEl) sumLossesEl.textContent = String(losses);
     if (sumWinrateEl) sumWinrateEl.textContent = `${winrate.toFixed(1)}%`;
+  }
+
+  // ===== Atualização de saldo na UI =====
+  function updateSaldoUI() {
+    const el = document.getElementById('saldoValor');
+    if (!el) return;
+    const lucro = saldoAtual - SALDO_INICIAL;
+    const cor = lucro >= 0 ? '#3aff7a' : '#ff4d4d';
+    el.innerHTML = `Saldo: <span style="color:${cor}">${saldoAtual.toFixed(2)}</span> (${lucro >= 0 ? '+' : ''}${lucro.toFixed(2)})`;
+  }
+
+  // ===== Inicialização do painel de configuração =====
+  function initConfigBox() {
+    const valInput = document.getElementById('valorEntradaInput');
+    const payInput = document.getElementById('payoutInput');
+    const btn = document.getElementById('btnSalvarConfig');
+    if (!valInput || !payInput || !btn) return;
+
+    btn.addEventListener('click', () => {
+      VALOR_ENTRADA = parseFloat(valInput.value) || VALOR_ENTRADA;
+      PAYOUT = parseFloat(payInput.value) || PAYOUT;
+      updateSaldoUI();
+      alert(`Configurações atualizadas!\nEntrada: ${VALOR_ENTRADA.toFixed(2)} USDT\nPayout: ${(PAYOUT * 100).toFixed(1)}%`);
+    });
   }
 
   function addSignalToStore(symbol, side, price) {
@@ -334,6 +368,13 @@
   function newDaySession() {
     state.dayKey = getDayKey();
     ensureDay(state.store, state.dayKey);
+
+    // Reset banca para novo dia
+    SALDO_INICIAL = 0.00;
+    saldoAtual = 0.00;
+    updateSaldoUI();
+
+    saveStore();
     loadDayToUI();
   }
 
@@ -738,6 +779,15 @@
       else if (side === 'PUT' && -diff > minMove) result = 'WIN';
       else result = 'LOSS';
 
+      // ===== Atualiza Saldo =====
+      if (result === 'WIN') {
+        const ganho = VALOR_ENTRADA * PAYOUT;
+        saldoAtual += ganho;
+      } else {
+        saldoAtual -= VALOR_ENTRADA;
+      }
+      updateSaldoUI();
+
       // Estatísticas por símbolo
       state.stats[symbol].total += 1;
       if (result === 'WIN') state.stats[symbol].wins += 1;
@@ -823,8 +873,15 @@
       btnReset.addEventListener('click', () => {
         ensureDay(state.store, state.dayKey);
         state.store[state.dayKey] = { signals: [], results: [], stats: { total: 0, wins: 0, losses: 0, winrate: 0 } };
+        
+        // ===== Resetar Banca =====
+        saldoAtual = 0.00;
+        SALDO_INICIAL = 0.00;
+        updateSaldoUI();
+        
         saveStore();
         loadDayToUI();
+        alert('✅ Dados e banca resetados para o novo dia!');
       });
     }
 
@@ -839,6 +896,10 @@
     for (const s of SYMBOLS) {
       updateSymbolModeUI(s, state.modes[s]);
     }
+
+    // Inicialização do painel de configuração e saldo
+    initConfigBox();
+    updateSaldoUI();
   }
 
   // Boot
