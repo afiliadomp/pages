@@ -581,6 +581,54 @@
     }
   }
 
+  // Pronúncia e mensagens TTS para símbolos (pt-BR)
+  function baseSymbol(sym) {
+    const s = String(sym || '').toUpperCase();
+    if (s.includes('BTC')) return 'BTC';
+    if (s.includes('ETH')) return 'ETH';
+    if (s.includes('XRP')) return 'XRP';
+    if (s.includes('ADA')) return 'ADA';
+    return s;
+  }
+  function readableAcronymPT(base) {
+    switch (base) {
+      case 'BTC': return 'Bê Tê Cê';
+      case 'ETH': return 'Ê Tê H';
+      case 'XRP': return 'X R Pê';
+      case 'ADA': return 'Á DÁ';
+      default: return base;
+    }
+  }
+  function readableNamePT(base) {
+    switch (base) {
+      case 'BTC': return 'Bitcoin';
+      case 'ETH': return 'Étirium';
+      case 'XRP': return 'X R Pê';
+      case 'ADA': return 'Áda';
+      default: return base;
+    }
+  }
+  function resolveSymbolSpeech(symbol, mode) {
+    const base = baseSymbol(symbol);
+    const m = mode || (localStorage.getItem('ttsSymbolMode') || 'acronym');
+    return m === 'full' ? readableNamePT(base) : readableAcronymPT(base);
+  }
+  function speakSymbol(symbol, action, opts) {
+    const readable = resolveSymbolSpeech(symbol, opts?.mode);
+    const text = `Operação ${action}, ${readable}`;
+    speak(text, opts);
+  }
+  function buildSignalSpeech(symbol, side, score, mode) {
+    const action = side === 'CALL' ? 'de compra' : 'de venda';
+    const readable = resolveSymbolSpeech(symbol, mode);
+    const pct = Math.round((Number(score) || 0) * 100);
+    return `Operação ${action}, ${readable}, score ${pct} por cento.`;
+  }
+  function buildResultSpeech(symbol, result, mode) {
+    const readable = resolveSymbolSpeech(symbol, mode);
+    return String(result).toUpperCase() === 'WIN' ? `Vitória, em ${readable}.` : `Derrota, em ${readable}.`;
+  }
+
   // Memoriza voz preferida e repovoa seletor quando vozes carregarem
   try {
     const ss = window.speechSynthesis;
@@ -1071,7 +1119,7 @@ function announceSignals() {
       addSignalToStore(symbol, side, lp);
       const th = adaptiveThreshold(symbol);
       try { logSignal(symbol, side, regime, lp, rsiNow, sd.K, sd.D, `score:${score.toFixed(2)} | regime:${regime} | rsiBuy:${th.rsiBuy} rsiSell:${th.rsiSell} | kOver:${state.model[symbol]?.kOver ?? 90} kUnder:${state.model[symbol]?.kUnder ?? 10} | minATR:${(state.model[symbol]?.minAtrMult ?? 0.2).toFixed(2)}`); } catch (_) {}
-      try { speak(`${symbol} ${side === 'CALL' ? 'compra' : 'venda'} score ${(score*100).toFixed(0)} por cento.`); } catch (_) {}
+      try { const msg = buildSignalSpeech(symbol, side, score); speak(msg); } catch (_) {}
     }
   }
 
@@ -1170,7 +1218,7 @@ function announceSignals() {
 
       // UI e persistência
       try { result === 'WIN' ? soundWin() : soundLoss(); } catch (_) {}
-      try { speak(`${symbol} ${result === 'WIN' ? 'vitória' : 'derrota'}`); } catch (_) {}
+      try { const msg = buildResultSpeech(symbol, result); speak(msg); } catch (_) {}
       prependResultItem(symbol, result, side, entryPrice, exitPrice);
       addResultToStore(symbol, result, side, entryPrice, exitPrice);
       console.log(`[RESULT] ${symbol} ${result} (${side}) ${entryPrice} → ${exitPrice}`);
