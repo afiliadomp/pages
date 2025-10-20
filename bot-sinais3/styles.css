@@ -407,3 +407,16 @@ p { margin: 0; }
 }
 .ticker-card[data-break="CALL"] .symbol-icon { color: #1f7a1f; }
 .ticker-card[data-break="PUT"] .symbol-icon { color: #c33; }
+/* TTS controls */
+.tts-box {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.9rem;
+  padding: 8px;
+  border-radius: 10px;
+  background: #181818;
+}
+.tts-sliders label {
+  font-weight: 500;
+}

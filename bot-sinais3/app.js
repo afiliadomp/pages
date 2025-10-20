@@ -531,11 +531,20 @@
       // Cancela falas anteriores para evitar sobreposição
       try { ss.cancel(); } catch (_) {}
 
-      // Parametrização com defaults mais naturais
-      let pitch = 1.05, rate = 0.95, lang = 'pt-BR';
+      // Carrega defaults persistidos (com fallbacks)
+      const savedRate = Number.parseFloat(localStorage.getItem('ttsRate') ?? '1.0');
+      const savedPitch = Number.parseFloat(localStorage.getItem('ttsPitch') ?? '1.0');
+      const savedVol = Number.parseFloat(localStorage.getItem('ttsVol') ?? '1.0');
+
+      let rate = Number.isFinite(savedRate) ? savedRate : 1.0;
+      let pitch = Number.isFinite(savedPitch) ? savedPitch : 1.0;
+      let volume = Number.isFinite(savedVol) ? savedVol : 1.0;
+      let lang = 'pt-BR';
+
       if (optsOrPitch && typeof optsOrPitch === 'object') {
         if (Number.isFinite(optsOrPitch.pitch)) pitch = optsOrPitch.pitch;
         if (Number.isFinite(optsOrPitch.rate)) rate = optsOrPitch.rate;
+        if (Number.isFinite(optsOrPitch.volume)) volume = optsOrPitch.volume;
         if (optsOrPitch.lang) lang = optsOrPitch.lang;
       } else {
         if (Number.isFinite(optsOrPitch)) pitch = optsOrPitch;
@@ -547,7 +556,7 @@
       utter.lang = lang;
       utter.pitch = pitch;
       utter.rate = rate;
-      utter.volume = 1.0;
+      utter.volume = volume;
 
       // Seleciona voz feminina brasileira, se disponível
       const voices = ss.getVoices?.() || [];
@@ -558,33 +567,37 @@
       }
       if (!selected && voices.length) {
         selected =
-          voices.find(v => /^pt/i.test(v.lang) && /female|mulher|feminina|woman/i.test(v.name)) ||
-          voices.find(v => v.lang === 'pt-BR' && /brasil|brazil|let[ií]cia|luciana|female|mulher/i.test(v.name)) ||
+          voices.find(v => /^pt/i.test(v.lang) && /(female|mulher|feminina|woman|luciana|let[ií]cia|maria|camila|helo[ií]sa|fernanda|isabel?a|v[íi]t[oó]ria|bia|gabriela|carla|paula|google|brasil|brazil)/i.test(v.name)) ||
+          voices.find(v => v.lang === 'pt-BR' && /(luciana|let[ií]cia|maria|camila|helo[ií]sa|fernanda|isabel?a|v[íi]t[oó]ria|bia|gabriela|carla|paula|google|brasil|brazil)/i.test(v.name)) ||
           voices.find(v => v.lang === 'pt-BR') ||
           voices[0];
       }
       if (selected) utter.voice = selected;
 
       ss.speak(utter);
-      console.log(`[TTS] Falando: "${text}" com voz: ${utter.voice?.name || 'padrão'} (pitch=${utter.pitch}, rate=${utter.rate})`);
+      console.log(`[TTS] Falando: "${text}" voz=${utter.voice?.name || 'padrão'} rate=${utter.rate} pitch=${utter.pitch} vol=${utter.volume}`);
     } catch (err) {
       console.warn('Erro no TTS:', err);
     }
   }
 
-  // Memoriza voz feminina preferida quando as vozes do TTS carregarem
+  // Memoriza voz preferida e repovoa seletor quando vozes carregarem
   try {
     const ss = window.speechSynthesis;
-    if (ss && typeof ss.onvoiceschanged !== 'undefined') {
+    if (ss) {
+      const prev = ss.onvoiceschanged;
       ss.onvoiceschanged = () => {
         try {
           const voices = ss.getVoices();
-          const chosen =
-            voices.find(v => /luciana/i.test(v.name)) ||
-            voices.find(v => /let[ií]cia/i.test(v.name)) ||
-            voices.find(v => v.lang === 'pt-BR');
-          if (chosen) localStorage.setItem('ttsVoice', chosen.name);
+          if (!localStorage.getItem('ttsVoice')) {
+            const female = voices.filter(v => /^pt/i.test(v.lang) && /(maria|let[ií]cia|luciana|feminina|google|brasil|brazil|camila|helo[ií]sa|fernanda|isabel?a|v[íi]t[oó]ria|bia|gabriela|carla|paula)/i.test(v.name));
+            const pt = voices.filter(v => /^pt/i.test(v.lang));
+            const chosen = female[0] || pt.find(v => v.lang === 'pt-BR') || pt[0];
+            if (chosen) localStorage.setItem('ttsVoice', chosen.name);
+          }
         } catch (_) { /* silencioso */ }
+        try { if (typeof prev === 'function') prev(); } catch (_) { /* silencioso */ }
+        try { if (typeof populateVoices === 'function') populateVoices(); } catch (_) { /* silencioso */ }
       };
     }
   } catch (_) { /* silencioso */ }
@@ -1360,6 +1373,127 @@ function announceSignals() {
     } catch (_) { /* silencioso */ }
   }
 
+  function populateVoices() {
+    try {
+      const ss = window.speechSynthesis;
+      const select = document.getElementById('ttsVoiceSelect');
+      if (!ss || !select) return;
+      const voices = ss.getVoices ? ss.getVoices() || [] : [];
+
+      const lower = s => (s || '').toLowerCase();
+      let femaleVoices = voices.filter(v =>
+        /^pt/i.test(v.lang) && (
+          lower(v.name).includes('maria') ||
+          lower(v.name).includes('letícia') || lower(v.name).includes('leticia') ||
+          lower(v.name).includes('luciana') ||
+          lower(v.name).includes('feminina') ||
+          lower(v.name).includes('google') ||
+          lower(v.name).includes('brasil') || lower(v.name).includes('brazil') ||
+          lower(v.name).includes('camila') ||
+          lower(v.name).includes('heloísa') || lower(v.name).includes('heloisa') ||
+          lower(v.name).includes('fernanda') ||
+          lower(v.name).includes('isabela') ||
+          lower(v.name).includes('gabriela') ||
+          lower(v.name).includes('vitoria') || lower(v.name).includes('vitória') ||
+          lower(v.name).includes('bia') ||
+          lower(v.name).includes('carla') ||
+          lower(v.name).includes('paula')
+        )
+      );
+
+      if (!femaleVoices.length) {
+        femaleVoices = voices.filter(v => /^pt/i.test(v.lang));
+      }
+
+      if (!femaleVoices.length) {
+        console.warn('Nenhuma voz pt-BR encontrada. Instale vozes femininas no sistema.');
+      }
+
+      select.innerHTML = femaleVoices.map(v => `<option value="${v.name}">${v.name} (${v.lang})</option>`).join('');
+      const savedVoice = localStorage.getItem('ttsVoice');
+      if (savedVoice && femaleVoices.some(v => v.name === savedVoice)) {
+        select.value = savedVoice;
+      } else if (femaleVoices[0]) {
+        select.value = femaleVoices[0].name;
+        localStorage.setItem('ttsVoice', femaleVoices[0].name);
+      }
+    } catch (_) { /* silencioso */ }
+  }
+
+  function initTTSControls() {
+    try {
+      const select = document.getElementById('ttsVoiceSelect');
+      const btnTest = document.getElementById('testVoiceBtn');
+      const rateSlider = document.getElementById('rateSlider');
+      const pitchSlider = document.getElementById('pitchSlider');
+      const volSlider = document.getElementById('volSlider');
+      const rateVal = document.getElementById('rateVal');
+      const pitchVal = document.getElementById('pitchVal');
+      const volVal = document.getElementById('volVal');
+      const ss = window.speechSynthesis;
+      if (!select) return;
+
+      const ensurePopulated = () => { try { populateVoices(); } catch (_) {} };
+
+      if (ss && typeof ss.getVoices === 'function') {
+        const have = ss.getVoices();
+        if (have && have.length) ensurePopulated();
+        setTimeout(ensurePopulated, 300);
+        setTimeout(ensurePopulated, 1000);
+      }
+
+      // Carregar valores salvos
+      const savedRate = parseFloat(localStorage.getItem('ttsRate') ?? '1.0');
+      const savedPitch = parseFloat(localStorage.getItem('ttsPitch') ?? '1.0');
+      const savedVol = parseFloat(localStorage.getItem('ttsVol') ?? '1.0');
+
+      if (rateSlider && rateVal) {
+        rateSlider.value = Number.isFinite(savedRate) ? savedRate : 1.0;
+        rateVal.textContent = rateSlider.value;
+        rateSlider.addEventListener('input', () => {
+          rateVal.textContent = rateSlider.value;
+          localStorage.setItem('ttsRate', rateSlider.value);
+        });
+      }
+      if (pitchSlider && pitchVal) {
+        pitchSlider.value = Number.isFinite(savedPitch) ? savedPitch : 1.0;
+        pitchVal.textContent = pitchSlider.value;
+        pitchSlider.addEventListener('input', () => {
+          pitchVal.textContent = pitchSlider.value;
+          localStorage.setItem('ttsPitch', pitchSlider.value);
+        });
+      }
+      if (volSlider && volVal) {
+        volSlider.value = Number.isFinite(savedVol) ? savedVol : 1.0;
+        volVal.textContent = volSlider.value;
+        volSlider.addEventListener('input', () => {
+          volVal.textContent = volSlider.value;
+          localStorage.setItem('ttsVol', volSlider.value);
+        });
+      }
+
+      select.addEventListener('change', () => {
+        const name = select.value;
+        if (name) localStorage.setItem('ttsVoice', name);
+        speak('Voz selecionada.');
+      });
+
+      if (btnTest) {
+        btnTest.addEventListener('click', () => {
+          speak('Teste de voz feminina em português do Brasil.');
+        });
+      }
+
+      // Aviso discreto caso não haja vozes PT
+      try {
+        const voices = ss?.getVoices?.() || [];
+        if (!voices.some(v => /^pt/i.test(v.lang))) {
+          console.warn('Nenhuma voz pt-BR encontrada. Instale vozes femininas no sistema.');
+        }
+      } catch (_) { /* silencioso */ }
+    } catch (_) { /* silencioso */ }
+  }
+
   // ===== Inicialização =====
   async function init() {
     setStatus('Carregando...', 'warn');
@@ -1418,6 +1552,7 @@ function announceSignals() {
     // Inicialização do painel de configuração e saldo
     initConfigBox();
     initSystemToggles();
+    initTTSControls();
     updateSaldoUI();
   }
 
