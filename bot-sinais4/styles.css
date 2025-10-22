@@ -116,7 +116,7 @@ p { margin: 0; }
 #panelTop { text-align: center; }
 #clock {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-  font-size: 34px;
+  font-size: 60px;
   font-weight: 700;
   color: var(--accent-teal);
   text-shadow: 0 0 12px rgba(45, 212, 191, 0.35);
@@ -213,12 +213,28 @@ p { margin: 0; }
 .ticker-card .card-row { margin-bottom: var(--space-1); }
 .ticker-card .price { text-align: right; }
 
+/* Mini status de filtros nos tickers */
+.filter-status {
+  font-size: 12px;
+  color: #bbb;
+  margin-top: 4px;
+  line-height: 1.2em;
+  white-space: normal;
+}
+
 /* Métricas em cards e feeds */
 .metrics {
-  font-size: 0.85rem;
+  font-size: 1rem;
   color: #bbb;
   margin-top: 2px;
 }
+
+/* EMA colorida dentro de metrics */
+.metrics .ema-line { font-size:16px; color: #bbb; margin-bottom: 2px; }
+.metrics .ema9.up { color: #3aff7a; }
+.metrics .ema9.down { color: #ff4d4d; }
+.metrics .ema9.flat { color: #bbb; }
+.metrics .ema21 { color: #bbb; }
 .trend-status { font-size: 0.85rem; margin-top: 2px; }
 .trend-status.up { color: var(--green-up); }
 .trend-status.down { color: var(--red-down); }

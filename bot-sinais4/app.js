@@ -4,6 +4,7 @@
 
   // ===== Constantes e Estado =====
   const SYMBOLS = ["ADAUSDT", "XRPUSDT", "ETHUSDT", "BTCUSDT"];
+  const TICK = { ADAUSDT: 0.0001, XRPUSDT: 0.0001, ETHUSDT: 0.01, BTCUSDT: 0.1 };
 
   const RSI_PERIOD = 14;
   const STOCH_PERIOD = 14;
@@ -163,6 +164,7 @@
   function updateMetrics(symbol) {
     const closes = state.closes[symbol];
     if (!closes || closes.length < (RSI_PERIOD + STOCH_PERIOD)) return;
+
     const working = closes.slice();
     const lp = state.lastPrice[symbol];
     if (Number.isFinite(lp)) working.push(lp);
@@ -171,19 +173,39 @@
     const sd = stochRsi(working, RSI_PERIOD, STOCH_PERIOD, K_SMOOTH, D_SMOOTH);
     const atrVal = atr(working, ATR_PERIOD);
 
+    const ema9v = ema(working, 9);
+    const ema21v = ema(working, 21);
+
     const lastRsiNum = rsiVal ? Number(rsiVal[rsiVal.length - 1]) : null;
     const kNum = sd ? Number(sd.K) : null;
-    const dVal = sd ? Number(sd.D).toFixed(1) : '—';
+
     const lastRsi = lastRsiNum != null ? lastRsiNum.toFixed(1) : '—';
     const kVal = kNum != null ? kNum.toFixed(1) : '—';
+    const dVal = sd ? Number(sd.D).toFixed(1) : '—';
     const atrFmt = atrVal ? atrVal.toFixed(5) : '—';
 
     const el = document.getElementById(`metrics-${symbol}`);
     if (el) {
-      const color = lastRsiNum >= 70 || kNum >= 90 ? '#ff4d4d'
-              : lastRsiNum <= 30 || kNum <= 10 ? '#3aff7a'
-              : '#cccccc';
-      el.innerHTML = `<span style="color:${color}">RSI:${lastRsi}</span> | K:${kVal} | D:${dVal} | ATR:${atrFmt}`;
+      const rsiColor = lastRsiNum >= 70 || kNum >= 90 ? '#ff4d4d'
+                    : lastRsiNum <= 30 || kNum <= 10 ? '#3aff7a'
+                    : '#cccccc';
+
+      const emaLine = (ema9v != null && ema21v != null)
+        ? `<span class="ema9 ${ema9v > ema21v ? 'up' : (ema9v < ema21v ? 'down' : 'flat')}">EMA9 ${ema9v.toFixed(5)}</span> · <span class="ema21">EMA21 ${ema21v.toFixed(5)}</span>`
+        : `EMA: —`;
+
+      el.innerHTML = `
+        <div class="ema-line">${emaLine}</div>
+        <div><span style="color:${rsiColor}">RSI:${lastRsi}</span> | K:${kVal} | D:${dVal} | ATR:${atrFmt}</div>
+      `;
+    }
+
+    // Atualizar mini status de EMAs separado
+    const emaEl = document.getElementById(`status-ema-${symbol}`);
+    if (emaEl) {
+      const ema9Fmt = ema9v != null ? ema9v.toFixed(5) : '—';
+      const ema21Fmt = ema21v != null ? ema21v.toFixed(5) : '—';
+      emaEl.innerText = `EMA9 ${ema9Fmt} · EMA21 ${ema21Fmt}`;
     }
   }
 
@@ -1038,6 +1060,10 @@ function announceSignals() {
       if (!Number.isFinite(tr.ltb) && !Number.isFinite(tr.lta)) continue;
 
       const regime = detectMarketRegime(symbol);
+      // 🔧 Guard anti-ruído: evita operar no miolo (RSI ~ 45-55 e K~D colados)
+      const kdGap = sd ? Math.abs(sd.K - sd.D) : 100;
+      const midZone = (rsiNow > 45 && rsiNow < 55) && (kdGap < 3);
+      if (midZone) continue;
       // contexto para scoring
       const atrVal = atr(state.closes[symbol], ATR_PERIOD);
       const nearLTB = Number.isFinite(tr.ltb) ? Math.abs(lp - tr.ltb) / tr.ltb < 0.0012 : false;
@@ -1047,6 +1073,61 @@ function announceSignals() {
       const score = Math.max(0, Math.min(1, Number(scoreObj.score) || 0));
 
       // 🔧 removido gating por abstenção/score mínimo
+
+      // 🔧 filtros inteligentes contra falsos sinais de baixa (lagging)
+      const prevClose = closes.at(-1);
+      const rsiPrev = rsiS.at(-2);
+      const workingPrev = working.slice(0, -1); // série anterior para comparar
+      const sdPrev = stochRsi(workingPrev, RSI_PERIOD, STOCH_PERIOD, K_SMOOTH, D_SMOOTH);
+      const crossedDown = sdPrev && sdPrev.K > sdPrev.D && sd.K < sd.D;
+      const crossedUp   = sdPrev && sdPrev.K < sdPrev.D && sd.K > sd.D;
+      // 🔧 Validação: crossDown só vale se K veio de cima (>55). crossUp só vale se K veio de baixo (<45).
+      const crossedDownValid = crossedDown && sdPrev && sdPrev.K > 55;
+      const crossedUpValid   = crossedUp   && sdPrev && sdPrev.K < 45;
+
+      let trendHint = 'neutral';
+      if (rsiNow < 50 && sd.K < sd.D && lp < prevClose) trendHint = 'bearish';
+      else if (rsiNow > 50 && sd.K > sd.D && lp > prevClose) trendHint = 'bullish';
+
+      // reversão visível no candle atual
+      if (trendHint === 'bearish' && lp > prevClose && (lp - prevClose) / prevClose > 0.0015) {
+        trendHint = 'possible_reversal';
+      }
+      // divergência simples: RSI e preço sobem contra diagnóstico de baixa
+      if (trendHint === 'bearish' && rsiPrev != null && rsiNow > rsiPrev && lp > prevClose) {
+        trendHint = 'neutral';
+      }
+      // reset dinâmico da baixa se RSI cruzar 50 e K > D
+      if (trendHint === 'bearish' && rsiNow > 50 && sd.K > sd.D) {
+        trendHint = 'neutral';
+      }
+
+      // EMAs curtas como filtro adicional
+      const ema9 = ema(working, 9);
+      const ema21 = ema(working, 21);
+      const shortUp = ema9 && ema21 && ema9 > ema21;
+      const shortDown = ema9 && ema21 && ema9 < ema21;
+
+      // evitar operar contra candle de força
+      const bodies = closes.slice(-6).map((c, i, arr) => i ? Math.abs(arr[i] - arr[i - 1]) : null).filter(Boolean);
+      const avgBody = bodies.length ? bodies.reduce((a, b) => a + b, 0) / bodies.length : null;
+      const bodyNow = Math.abs(lp - prevClose);
+      let skipOpposite = null;
+      if (avgBody && bodyNow > avgBody * 2) {
+        skipOpposite = lp > prevClose ? 'skipPut' : 'skipCall';
+      }
+
+      const statusText = `
+        ${crossedDown ? "🟢 crossDown ok" : crossedUp ? "🟢 crossUp ok" : "⚪ neutro"} · 
+        ${skipOpposite ? `🔴 ${skipOpposite}` : ""} · 
+        ${shortUp ? "🟢 EMA↑" : shortDown ? "🔴 EMA↓" : ""} · 
+        ${trendHint === "possible_reversal" ? "🔴 possível reversão · PUT bloqueado" : ""}
+      `.trim();
+      // Guardar flags de filtros para compor com métricas no ticker
+      state.filterFlags = state.filterFlags || {};
+      state.filterFlags[symbol] = statusText;
+      const el = document.getElementById(`status-flags-${symbol}`);
+       if (el) el.innerText = statusText;
 
       const regimeEl = document.getElementById(`regime-${symbol}`);
       if (regimeEl) {
@@ -1068,11 +1149,11 @@ function announceSignals() {
         const nearLTB = Math.abs(lp - tr.ltb) / tr.ltb < 0.0012;
         const nearLTA = Math.abs(lp - tr.lta) / tr.lta < 0.0012;
         const { rsiBuy, rsiSell } = adaptiveThreshold(symbol);
-        if (nearLTB && sd.K >= 90 && sd.D >= 90 && rsiNow >= rsiSell) side = 'PUT';
-        else if (nearLTA && sd.K <= 10 && sd.D <= 10 && rsiNow <= rsiBuy) side = 'CALL';
+        if (nearLTB && sd.K >= 90 && sd.D >= 90 && rsiNow >= rsiSell && crossedDownValid) side = 'PUT';
+        else if (nearLTA && sd.K <= 10 && sd.D <= 10 && rsiNow <= rsiBuy && crossedUpValid) side = 'CALL';
       }
       else if (regime === "TREND") {
-        // Mercado tendencial → operar rompimento
+        // Mercado tendencial → operar rompimento, com filtros
         if (lp > tr.ltb) side = 'CALL';
         else if (lp < tr.lta) side = 'PUT';
       }
@@ -1088,9 +1169,21 @@ function announceSignals() {
         continue;
       }
 
-      const lastClose = closes.at(-1);
-      const prevClose = closes.at(-2) ?? lastClose;
       updateBreakHighlight(symbol);
+
+      // Aplicar filtros de reversão, EMA e candle forte
+      if (side === 'PUT') {
+        if (trendHint === 'possible_reversal' || shortUp || skipOpposite === 'skipPut') side = null;
+        if (regime === 'SIDE' && !crossedDownValid) side = null;
+      } else if (side === 'CALL') {
+        if (shortDown || skipOpposite === 'skipCall') side = null;
+        if (regime === 'SIDE' && !crossedUpValid) side = null;
+      }
+      // 🔧 evita CALL/PUT quando as EMAs curtas estão “coladas”
+      const emaGap = (ema9 && ema21) ? Math.abs(ema9 - ema21) : 0;
+      const minEmaGap = (symbol === 'ADAUSDT' || symbol === 'XRPUSDT') ? 0.00002 : (symbol === 'ETHUSDT' ? 0.05 : 0.5);
+      if (side === 'CALL' && emaGap < minEmaGap) side = null;
+      if (side === 'PUT'  && emaGap < minEmaGap) side = null;
 
       // Se nenhuma condição selecionou um lado, não operar
       if (!side) continue;
@@ -1188,12 +1281,22 @@ function announceSignals() {
 
       let result = 'LOSS';
       const atrVal = atr(state.closes[symbol], ATR_PERIOD) || 0;
-      const minMove = atrVal * (state.model[symbol]?.minAtrMult ?? 0.2); // exige movimento real proporcional ao ATR
+      const tick = TICK[symbol] || 0;
+      const m = state.model[symbol] || (state.model[symbol] = {});
+      m.minAtrMult = clamp((m.minAtrMult ?? 0.20), 0.12, 0.30);
+      const minMoveATR = atrVal * m.minAtrMult;
+      const minByTick = tick ? tick * 1 : 0; // pelo menos 1 tick
+      const minMove = Math.max(minMoveATR, minByTick);
       const diff = exitPrice - entryPrice;
 
       if (side === 'CALL' && diff > minMove) result = 'WIN';
       else if (side === 'PUT' && -diff > minMove) result = 'WIN';
       else result = 'LOSS';
+      // 🔧 decay suave: ganha -> reduz exigência do próximo minMove
+      try {
+        const m2 = state.model[symbol] || (state.model[symbol] = {});
+        if (result === 'WIN') m2.minAtrMult = clamp((m2.minAtrMult ?? 0.20) - 0.02, 0.12, 0.30);
+      } catch (_) {}
 
       // ===== Atualiza Saldo =====
       let delta = 0;
@@ -1261,7 +1364,7 @@ function announceSignals() {
     let deltaMin = 0;
     if (wr20 < 0.50) deltaMin += 0.05; else if (wr20 > 0.70) deltaMin -= 0.02;
     if (wr100 < 0.50) deltaMin += 0.02; else if (wr100 > 0.70) deltaMin -= 0.01;
-    m.minAtrMult = clamp(m.minAtrMult + deltaMin, 0.12, 0.50);
+    m.minAtrMult = clamp(m.minAtrMult + deltaMin, 0.12, 0.30);
 
     if (wr20 < 0.50) {
       m.kOver = clamp((m.kOver ?? 95) + 1, 90, 99);
