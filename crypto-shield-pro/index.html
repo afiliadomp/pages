@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Crypto Shield Pro</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <div class="brand">
+        <div class="logo-glow"></div>
+        <h1>Crypto Shield <span>Pro</span></h1>
+        <div class="subtitle">AI Trading Dashboard</div>
+      </div>
+      <div class="last-run">Última análise: <span id="last-run">—</span></div>
+    </header>
+
+    <main class="content">
+      <section class="card controls">
+        <h2>Parâmetros</h2>
+        <div class="grid">
+          <label class="field">
+            <span>Ativo</span>
+            <select id="asset">
+              <option>BTC/USDT</option>
+              <option>ETH/USDT</option>
+              <option>XRP/USDT</option>
+              <option>ADA/USDT</option>
+              <option>SOL/USDT</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Timeframe</span>
+            <select id="interval">
+              <option>1m</option>
+              <option>5m</option>
+              <option>15m</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Estratégia</span>
+            <select id="strategy">
+              <option>RSI Strategy</option>
+              <option>Moving Average Cross</option>
+              <option>Combined</option>
+              <option>Smart Adaptive Signal</option>
+            </select>
+          </label>
+        </div>
+        <button id="run" type="button" class="btn-primary">
+          <span class="spinner" aria-hidden="true"></span>
+          <span>Iniciar Análise</span>
+        </button>
+        <button id="analyze" type="button" class="btn-primary" style="margin-left:8px">
+          <span>🧠 Analisar Agora</span>
+        </button>
+        <div class="hint">Dados em tempo real via Binance (klines/candles)</div>
+      </section>
+
+      <section class="card status">
+        <div class="status-row">
+          <div>
+            <div class="label">Indicador</div>
+            <div id="signal" class="signal">NEUTRO</div>
+          </div>
+          <div>
+            <div class="label">Força</div>
+            <div id="strength" class="strength">—</div>
+          </div>
+          <div>
+            <div class="label">Probabilidade</div>
+            <div id="prob" class="prob">0%</div>
+          </div>
+        </div>
+        <div class="bar">
+          <div id="bar-fill" class="bar-fill"></div>
+        </div>
+        <div class="status-extra" style="margin-top:10px; display:flex; gap:16px; align-items:center; flex-wrap:wrap;">
+          <div>
+            <div class="label">Compra/Venda</div>
+            <div id="buy-sell">— / —</div>
+          </div>
+          <div>
+            <div class="label">Countdown</div>
+            <div id="countdown">—</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card log">
+        <h2>Log Técnico</h2>
+        <pre id="log"></pre>
+        <div id="atl-performance" class="atl-performance">
+          <div id="atl-summary" class="atl-summary">Performance (últimos 50 sinais)</div>
+          <canvas id="atl-chart" width="900" height="120"></canvas>
+        </div>
+      </section>
+      <!-- Gráfico -->
+      <section class="card">
+        <h2>Gráfico (últimos 100 candles)</h2>
+        <div class="chart-wrap">
+          <canvas id="chart" width="900" height="360"></canvas>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Overlay de processamento -->
+  <div id="processing" class="processing hidden">
+    <div class="pulse"></div>
+    <div class="processing-text">Processando análise...</div>
+  </div>
+
+  <script src="./script.js"></script>
+</body>
+</html>
